@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "VERITAS — Kontrol Data Keluar (Rencana MVP)",
+    "output": "docs/architecture/data-egress/index.html",
+    "quality_profile": "showcase"
+  },
+  "layout": { "mode": "auto" },
+  "components": [
+    { "id": "operator", "type": "external", "label": "Operator", "sublabel": "Invoice sintetis" },
+    { "id": "agent", "type": "backend", "label": "Agent", "sublabel": "Usulkan payload" },
+    { "id": "harness", "type": "security", "label": "Harness", "sublabel": "Periksa sebelum kirim" },
+    { "id": "deny", "type": "security", "label": "Blokir", "sublabel": "Tool tidak dipanggil" },
+    { "id": "send", "type": "messagebus", "label": "Tool pengiriman", "sublabel": "Payload tersaring" },
+    { "id": "receiver", "type": "external", "label": "Mock receiver", "sublabel": "Lokal · bukan layanan nyata" },
+    { "id": "receipt", "type": "database", "label": "Receipt", "sublabel": "Tanpa payload sensitif" }
+  ],
+  "connections": [
+    { "id": "start", "from": "operator", "to": "agent", "label": "Tugas" },
+    { "id": "proposal", "from": "agent", "to": "harness", "label": "Tujuan + payload" },
+    { "id": "denied", "from": "harness", "to": "deny", "label": "Sensitif / tidak dikenal", "variant": "security" },
+    { "id": "allowed", "from": "harness", "to": "send", "label": "Hanya jika diizinkan", "variant": "security" },
+    { "id": "deliver", "from": "send", "to": "receiver", "label": "Kirim sekali" },
+    { "id": "evidence", "from": "harness", "to": "receipt", "label": "Keputusan" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Demo terarah", "items": ["Field sensitif sintetis dan tujuan di luar allowlist diblokir", "Payload yang lolos aturan dikirim ke mock receiver lokal"] },
+    { "dot": "rose", "title": "Batas perlindungan", "items": ["Hanya jalur yang melewati Harness; akses langsung dan provider perlu kontrol terpisah", "Policy gagal atau klasifikasi tidak diketahui: deny"] },
+    { "dot": "emerald", "title": "Bukti bukan kerahasiaan", "items": ["Jangan simpan payload rahasia di log, receipt atau chain", "Blockchain membuktikan integritas bukti, bukan menjaga kerahasiaan"] }
+  ]
+}
