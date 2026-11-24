@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS events(
 CREATE TABLE IF NOT EXISTS egress_deliveries(
   id TEXT PRIMARY KEY, idempotency_key TEXT UNIQUE NOT NULL, destination TEXT NOT NULL,
   payload_digest TEXT NOT NULL, sensitive_fields TEXT, decision TEXT NOT NULL,
-  reason_code TEXT, actor TEXT, created_at TEXT NOT NULL);
+  reason_code TEXT, actor TEXT, organization_id TEXT, created_at TEXT NOT NULL,
+  delivery_status TEXT, delivery_attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT);
 CREATE TABLE IF NOT EXISTS mock_inbox(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL, payload_json TEXT NOT NULL,
   received_at TEXT NOT NULL);
@@ -162,14 +163,23 @@ def run(sql: str, args: tuple = ()) -> sqlite3.Cursor:
 
 def ensure_columns() -> None:
     """Idempotent column adds so an older veritas.db keeps working."""
-    existing = {row["name"] for row in rows("PRAGMA table_info(anchors)")}
-    for name, ddl in (
-        ("attempts", "INTEGER NOT NULL DEFAULT 0"),
-        ("last_error", "TEXT"),
-        ("updated_at", "TEXT"),
+    for table, columns in (
+        ("anchors", (("attempts", "INTEGER NOT NULL DEFAULT 0"), ("last_error", "TEXT"), ("updated_at", "TEXT"))),
+        ("egress_deliveries", (
+            ("organization_id", "TEXT"),
+            ("delivery_status", "TEXT"),
+            ("delivery_attempts", "INTEGER NOT NULL DEFAULT 0"),
+            ("last_error", "TEXT"),
+        )),
     ):
-        if name not in existing:
-            run(f"ALTER TABLE anchors ADD COLUMN {name} {ddl}")
+        existing = {row["name"] for row in rows(f"PRAGMA table_info({table})")}
+        for name, ddl in columns:
+            if name not in existing:
+                run(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+    run("UPDATE egress_deliveries SET delivery_status = CASE WHEN decision='ALLOW' THEN 'DELIVERED' ELSE 'SKIPPED' END,"
+        " delivery_attempts = CASE WHEN decision='ALLOW' AND delivery_attempts=0 THEN 1 ELSE delivery_attempts END"
+        " WHERE delivery_status IS NULL")
+    run("UPDATE egress_deliveries SET organization_id=? WHERE organization_id IS NULL", (ORG_ID,))
 
 
 ensure_columns()
@@ -1065,6 +1075,38 @@ def find_sensitive(value: Any, found: set[str] | None = None) -> set[str]:
     return found
 
 
+RECEIVER_FAILURES = {"remaining": 0}
+
+def deliver_to_mock(destination: str, payload: Any) -> str | None:
+    """One delivery attempt. Returns an error code, or None when accepted."""
+    if RECEIVER_FAILURES["remaining"] > 0:
+        RECEIVER_FAILURES["remaining"] -= 1
+        return "RECEIVER_UNAVAILABLE"
+    run("INSERT INTO mock_inbox(destination,payload_json,received_at) VALUES(?,?,?)",
+        (destination, canonical(payload).decode(), utc_now()))
+    return None
+
+def attempt_delivery(delivery_id: str, destination: str, payload: Any) -> int:
+    error = deliver_to_mock(destination, payload)
+    run("UPDATE egress_deliveries SET delivery_attempts=delivery_attempts+1, delivery_status=?, last_error=? WHERE id=?",
+        ("FAILED" if error else "DELIVERED", error, delivery_id))
+    return 0 if error else 1
+
+def egress_view(row: sqlite3.Row, replayed: bool = False, mock_calls: int = 0) -> dict:
+    return {"delivery_id": row["id"], "decision": row["decision"], "reason_code": row["reason_code"],
+            "delivery_status": row["delivery_status"], "delivery_attempts": row["delivery_attempts"],
+            "last_error": row["last_error"], "delivered": row["delivery_status"] == "DELIVERED",
+            "mock_calls": mock_calls, "replayed": replayed}
+
+@app.post("/internal/mock/receiver/failures", dependencies=[Depends(require_internal)])
+def mock_receiver_failures(body: dict):
+    remaining = body.get("remaining", 0)
+    if type(remaining) is not int or remaining < 0:
+        raise ApiError(422, "INVALID_PAYLOAD", "remaining must be a non-negative integer.")
+    RECEIVER_FAILURES["remaining"] = remaining
+    return {"remaining": remaining}
+
+
 @app.post("/api/v1/egress/send", status_code=202)
 def egress_send(
     body: dict,
@@ -1078,14 +1120,18 @@ def send_egress(destination: Any, payload: Any, idempotency_key: str, identity: 
     if not isinstance(destination, str) or not isinstance(payload, (dict, list)):
         raise ApiError(422, "INVALID_PAYLOAD", "destination (string) and payload (object) are required.")
     payload_digest = sha(canonical(payload))
+    org = scope_of(identity)[0]
     with _LOCK:
         existing = one("SELECT * FROM egress_deliveries WHERE idempotency_key=?", (idempotency_key,))
         if existing:
-            if existing["payload_digest"] != payload_digest or existing["destination"] != destination:
+            if (existing["payload_digest"], existing["destination"], existing["organization_id"]) != (
+                    payload_digest, destination, org):
                 raise ApiError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused with different content.")
-            return {"delivery_id": existing["id"], "decision": existing["decision"],
-                    "reason_code": existing["reason_code"], "delivered": existing["decision"] == "ALLOW",
-                    "replayed": True}
+            mock_calls = 0
+            if existing["decision"] == "ALLOW" and existing["delivery_status"] != "DELIVERED":
+                mock_calls = attempt_delivery(existing["id"], destination, payload)
+                existing = one("SELECT * FROM egress_deliveries WHERE id=?", (existing["id"],))
+            return egress_view(existing, replayed=True, mock_calls=mock_calls)
 
         sensitive = find_sensitive(payload)
         if destination not in ALLOWED_DESTINATIONS:
@@ -1096,16 +1142,13 @@ def send_egress(destination: Any, payload: Any, idempotency_key: str, identity: 
             decision, reason_code = "ALLOW", "ALLOWLISTED"
         delivery_id = f"dlv_{uuid.uuid4().hex[:16]}"
         run(
-            "INSERT INTO egress_deliveries(id,idempotency_key,destination,payload_digest,sensitive_fields,decision,reason_code,actor,created_at)"
-            " VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO egress_deliveries(id,idempotency_key,destination,payload_digest,sensitive_fields,decision,"
+            "reason_code,actor,organization_id,created_at,delivery_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (delivery_id, idempotency_key, destination, payload_digest, ",".join(sorted(sensitive)) or None,
-             decision, reason_code, identity["user"], utc_now()),
+             decision, reason_code, identity["user"], org, utc_now(), "SKIPPED" if decision == "DENY" else None),
         )
-        if decision == "ALLOW":
-            run("INSERT INTO mock_inbox(destination,payload_json,received_at) VALUES(?,?,?)",
-                (destination, canonical(payload).decode(), utc_now()))
-        return {"delivery_id": delivery_id, "decision": decision, "reason_code": reason_code,
-                "delivered": decision == "ALLOW", "mock_calls": 1 if decision == "ALLOW" else 0}
+        mock_calls = 1 if decision == "ALLOW" and attempt_delivery(delivery_id, destination, payload) else 0
+        return egress_view(one("SELECT * FROM egress_deliveries WHERE id=?", (delivery_id,)), mock_calls=mock_calls)
 
 
 @app.get("/internal/mock/receiver/calls", dependencies=[Depends(require_internal)])
