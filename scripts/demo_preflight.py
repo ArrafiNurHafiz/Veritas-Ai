@@ -69,6 +69,23 @@ def main():
     check("Dashboard summary available", status == 200, f"HTTP {status}")
     check("Seeded executions present", summary.get("executions", {}).get("total", 0) >= 5)
     check("Seeded receipts present", summary.get("receipts", 0) >= 2)
+
+    if summary.get("approvals_pending", 0) < 1:
+        # If seed approval previously expired, ensure a fresh pending approval exists
+        p_key = "seed-pending-" + uuid.uuid4().hex[:8]
+        call(
+            "/api/v1/tasks",
+            method="POST",
+            role="operator",
+            body={"task_type": "invoice_review", "payload": {
+                "invoice_id": "INV-2036-003",
+                "amount_idr": 8_500_000,
+                "vendor": "ABC",
+            }},
+            extra={"Idempotency-Key": p_key},
+        )
+        status, summary = call("/api/v1/dashboard/summary")
+
     check("Pending approval present", summary.get("approvals_pending", 0) >= 1)
 
     status, policy = call("/api/v1/policies")
