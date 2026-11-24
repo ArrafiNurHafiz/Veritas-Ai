@@ -16,13 +16,16 @@ is deployed.
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/test_demo.py          # 117 acceptance checks, no framework
-.venv/bin/python tests/test_e2e.py           # 30 checks against a real uvicorn process
+.venv/bin/python tests/test_demo.py          # 129 acceptance checks, no framework
+.venv/bin/python tests/test_e2e.py           # 35 checks against a real uvicorn process
 .venv/bin/python tests/test_seed.py          # 9 seed checks
 .venv/bin/python tests/test_openapi.py       # contract snapshot (use --write after an intended API change)
 .venv/bin/python seed_demo.py                # Nexora demo dataset (idempotent)
 .venv/bin/uvicorn veritas_harness:app --port 8002
 ```
+
+Schema changes are versioned in `MIGRATIONS` and recorded in `schema_migrations`;
+importing the module applies pending steps once and is safe to repeat.
 
 ## Demo credentials (dev defaults, override with `VERITAS_TOKENS`)
 
@@ -145,6 +148,9 @@ and one delivered redacted egress. Re-running is safe; fixed idempotency keys re
 ```sh
 .venv/bin/python seed_demo.py && .venv/bin/uvicorn veritas_harness:app --port 8002
 ```
+
+Schema changes are versioned in `MIGRATIONS` and recorded in `schema_migrations`;
+importing the module applies pending steps once and is safe to repeat.
 
 ## Planner
 
