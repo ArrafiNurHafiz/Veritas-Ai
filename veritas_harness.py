@@ -71,6 +71,32 @@ for _identity in TOKENS.values():
     _identity.setdefault("project", PROJECT_ID)
 INTERNAL_TOKEN = os.environ.get("VERITAS_INTERNAL_TOKEN", "dev-internal")
 
+SESSION_TTL_SECONDS = int(os.environ.get("VERITAS_SESSION_TTL_SECONDS", "43200"))
+COOKIE_SECURE = os.environ.get("VERITAS_COOKIE_SECURE") == "1"
+COOKIE_SAMESITE = os.environ.get("VERITAS_COOKIE_SAMESITE", "lax")
+LOGIN_WINDOW_SECONDS = 60
+LOGIN_MAX_FAILURES = 5
+
+# ponytail: plaintext demo passwords in env, not a password database. Swap for a users
+# table plus a real hash (argon2/scrypt) when accounts stop being synthetic.
+DEMO_PASSWORD = os.environ.get("VERITAS_DEMO_PASSWORD") or "demo123456"
+DEMO_ACCOUNTS = {
+    "alexa.chen@nexora.internal": {"user": "alexa.chen", "role": "admin"},
+    "sarah.jenkins@nexora.internal": {"user": "sarah.jenkins", "role": "approver"},
+    "marcus.vance@nexora.internal": {"user": "marcus.vance", "role": "operator"},
+    "dr.rachel.k@nexora.internal": {"user": "dr.rachel.k", "role": "auditor"},
+}
+ACCOUNTS: dict[str, dict[str, str]] = (
+    json.loads(os.environ["VERITAS_ACCOUNTS"]) if os.environ.get("VERITAS_ACCOUNTS") else DEMO_ACCOUNTS
+)
+for _email, _account in ACCOUNTS.items():
+    _account.setdefault("user", _email.split("@")[0])
+    _account.setdefault("role", "auditor")
+    _account.setdefault("org", ORG_ID)
+    _account.setdefault("project", PROJECT_ID)
+    _account.setdefault("password", DEMO_PASSWORD)
+LOGIN_FAILURES: dict[str, list[float]] = {}
+
 # --------------------------------------------------------------------------- storage
 
 SCHEMA = """
@@ -105,6 +131,10 @@ CREATE TABLE IF NOT EXISTS egress_deliveries(
 CREATE TABLE IF NOT EXISTS mock_inbox(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL, payload_json TEXT NOT NULL,
   received_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions(
+  token_hash TEXT PRIMARY KEY, user TEXT NOT NULL, role TEXT NOT NULL,
+  org TEXT NOT NULL, project TEXT, email TEXT, csrf_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT);
 """
 
 DB_PATH = os.environ.get("VERITAS_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "veritas.db"))
@@ -163,6 +193,64 @@ def utc_now() -> str:
 
 def utc_plus(seconds: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def _login_key(value: str) -> str:
+    return value.strip().lower()
+
+def login_blocked(key: str) -> bool:
+    cutoff = time.monotonic() - LOGIN_WINDOW_SECONDS
+    attempts = [seen for seen in LOGIN_FAILURES.get(key, []) if seen > cutoff]
+    LOGIN_FAILURES[key] = attempts
+    return len(attempts) >= LOGIN_MAX_FAILURES
+
+def record_login_failure(key: str) -> None:
+    cutoff = time.monotonic() - LOGIN_WINDOW_SECONDS
+    LOGIN_FAILURES[key] = [seen for seen in LOGIN_FAILURES.get(key, []) if seen > cutoff] + [time.monotonic()]
+
+def clear_login_failures(key: str) -> None:
+    LOGIN_FAILURES.pop(key, None)
+
+def sweep_sessions() -> None:
+    run("DELETE FROM sessions WHERE expires_at <= ? OR (revoked_at IS NOT NULL AND revoked_at <= ?)",
+        (utc_now(), utc_plus(-86400)))
+
+def create_session(identity: dict, email: str | None = None) -> tuple[str, str]:
+    """Opaque token + CSRF; only their hashes are stored."""
+    sweep_sessions()
+    token, csrf, now = secrets.token_urlsafe(32), secrets.token_hex(16), utc_now()
+    run(
+        "INSERT INTO sessions(token_hash,user,role,org,project,email,csrf_hash,created_at,last_seen_at,expires_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (sha(token), identity["user"], identity["role"], identity.get("org", ORG_ID),
+         identity.get("project", PROJECT_ID), email, sha(csrf), now, now, utc_plus(SESSION_TTL_SECONDS)),
+    )
+    return token, csrf
+
+def session_identity(token: str | None) -> dict | None:
+    if not token:
+        return None
+    row = one("SELECT * FROM sessions WHERE token_hash=? AND revoked_at IS NULL AND expires_at > ?",
+              (sha(token), utc_now()))
+    if not row:
+        return None
+    run("UPDATE sessions SET last_seen_at=? WHERE token_hash=?", (utc_now(), row["token_hash"]))
+    identity = {"user": row["user"], "role": row["role"], "org": row["org"], "project": row["project"]}
+    if row["email"]:
+        identity["email"] = row["email"]
+    return identity
+
+def revoke_session(token: str | None) -> None:
+    if token:
+        run("UPDATE sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL", (utc_now(), sha(token)))
+
+def session_csrf_ok(request: Request, supplied: str) -> bool:
+    expected = request.cookies.get("vt_csrf", "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        return False
+    token = request.cookies.get("vt_session", "")
+    row = one("SELECT csrf_hash FROM sessions WHERE token_hash=? AND revoked_at IS NULL AND expires_at > ?",
+              (sha(token), utc_now())) if token else None
+    return bool(row) and hmac.compare_digest(row["csrf_hash"], sha(supplied))
 
 
 def _load_signing_key() -> Ed25519PrivateKey:
@@ -302,9 +390,8 @@ def require_role(*roles: str):
             raise ApiError(403, "FORBIDDEN", "Role not permitted for this action.")
         if source == "cookie" and request.method not in ("GET", "HEAD", "OPTIONS"):
             supplied = request.headers.get("X-CSRF-Token", "")
-            cookie = request.cookies.get("vt_csrf", "")
-            if not cookie or not hmac.compare_digest(cookie, supplied):
-                raise ApiError(403, "CSRF_REQUIRED", "X-CSRF-Token must match the csrf cookie for cookie sessions.")
+            if not session_csrf_ok(request, supplied):
+                raise ApiError(403, "CSRF_REQUIRED", "X-CSRF-Token must match the csrf cookie and the active session.")
         request.state.identity = identity
         return identity
 
@@ -315,9 +402,9 @@ def request_identity(request: Request) -> tuple[dict | None, str | None]:
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() == "bearer" and token in TOKENS:
         return TOKENS[token], "bearer"
-    cookie = request.cookies.get("vt_session")
-    if cookie and cookie in TOKENS:
-        return TOKENS[cookie], "cookie"
+    identity = session_identity(request.cookies.get("vt_session"))
+    if identity:
+        return identity, "cookie"
     return None, None
 
 
@@ -403,21 +490,46 @@ async def unhandled_error_handler(request: Request, exc: Exception):
 
 # --------------------------------------------------------------------------- API session auth (separate frontend)
 
+def set_session_cookies(response, token: str, csrf: str) -> None:
+    response.set_cookie("vt_session", token, httponly=True, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+    response.set_cookie("vt_csrf", csrf, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+
+
 @app.post("/api/v1/auth/login")
 def api_login(body: dict):
+    email = body.get("email")
+    email = email.strip().lower() if isinstance(email, str) else ""
     token = body.get("token")
-    identity = TOKENS.get(token) if isinstance(token, str) else None
+    key = _login_key(email) if email else _login_key(f"token:{token}")
+    if login_blocked(key):
+        raise ApiError(429, "RATE_LIMITED", "Too many failed attempts; retry later.")
+    identity, session_email = None, None
+    if email:
+        account = ACCOUNTS.get(email)
+        password = body.get("password")
+        if account and isinstance(password, str) and hmac.compare_digest(password, account["password"]):
+            identity = {"user": account["user"], "role": account["role"],
+                        "org": account["org"], "project": account["project"]}
+            session_email = email
+    elif isinstance(token, str) and token in TOKENS:
+        identity = TOKENS[token]
     if not identity:
-        raise ApiError(401, "INVALID_CREDENTIALS", "Unknown demo token.")
-    csrf = secrets.token_hex(16)
-    response = JSONResponse({"user": identity["user"], "role": identity["role"], "csrf_token": csrf})
-    response.set_cookie("vt_session", token, httponly=True, samesite="lax")
-    response.set_cookie("vt_csrf", csrf, samesite="lax")
+        record_login_failure(key)
+        raise ApiError(401, "INVALID_CREDENTIALS", "Unknown credentials.")
+    clear_login_failures(key)
+    session_token, csrf = create_session(identity, session_email)
+    payload = {"user": identity["user"], "role": identity["role"], "csrf_token": csrf,
+               "expires_in": SESSION_TTL_SECONDS}
+    if session_email:
+        payload["email"] = session_email
+    response = JSONResponse(payload)
+    set_session_cookies(response, session_token, csrf)
     return response
 
 
 @app.post("/api/v1/auth/logout")
-def api_logout(identity: dict = Depends(require_role())):
+def api_logout(request: Request, identity: dict = Depends(require_role())):
+    revoke_session(request.cookies.get("vt_session"))
     response = JSONResponse({"status": "logged_out"})
     response.delete_cookie("vt_session")
     response.delete_cookie("vt_csrf")
@@ -427,8 +539,11 @@ def api_logout(identity: dict = Depends(require_role())):
 @app.get("/api/v1/me")
 def api_me(identity: dict = Depends(require_role())):
     org, project = scope_of(identity)
-    return {"user": identity["user"], "role": identity["role"],
-            "organization_id": org, "project_id": project}
+    payload = {"user": identity["user"], "role": identity["role"],
+               "organization_id": org, "project_id": project}
+    if identity.get("email"):
+        payload["email"] = identity["email"]
+    return payload
 
 
 # --------------------------------------------------------------------------- policy engine
@@ -551,6 +666,9 @@ def execution_view(execution_id: str, identity: dict | None = None) -> dict:
         "receipt_id": ex["receipt_id"],
         "approval_id": ex["approval_id"],
         "idempotency_key": ex["idempotency_key"],
+        "actor": ex["actor"],
+        "created_at": ex["created_at"],
+        "updated_at": ex["updated_at"],
     }
     if ex["receipt_id"]:
         anchor = one("SELECT status,tx_ref,attempts,last_error FROM anchors WHERE receipt_id=?", (ex["receipt_id"],))
@@ -578,7 +696,8 @@ def submit_task(payload: Any, idempotency_key: str, identity: dict, cid: str, ta
         if existing:
             if existing["payload_hash"] != sha(canonical(payload)):
                 raise ApiError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused with a different payload.")
-            view = execution_view(existing["id"])
+            require_execution_scope(existing, identity)
+            view = execution_view(existing["id"], identity)
             view["replayed"] = True
             return view
 
@@ -640,6 +759,66 @@ def submit_task(payload: Any, idempotency_key: str, identity: dict, cid: str, ta
         return execution_view(execution_id)
 
 
+@app.get("/api/v1/executions")
+def list_executions(status: str = "", limit: int = 20, offset: int = 0,
+                    identity: dict = Depends(require_role())):
+    sweep_expired()
+    org, project = scope_of(identity)
+    limit, offset = max(1, min(limit, 100)), max(0, offset)
+    clause, args = "organization_id=? AND project_id=?", [org, project]
+    if status:
+        clause += " AND status=?"
+        args.append(status)
+    total = one(f"SELECT COUNT(*) AS n FROM executions WHERE {clause}", tuple(args))["n"]
+    items = [
+        execution_view(row["id"], identity)
+        for row in rows(f"SELECT id FROM executions WHERE {clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                        (*args, limit, offset))
+    ]
+    return {"executions": items, "total": total, "limit": limit, "offset": offset}
+
+@app.get("/api/v1/dashboard/summary")
+def dashboard_summary(identity: dict = Depends(require_role())):
+    sweep_expired()
+    org, project = scope_of(identity)
+    by_status = {row["status"]: row["n"] for row in rows(
+        "SELECT status, COUNT(*) AS n FROM executions WHERE organization_id=? AND project_id=? GROUP BY status",
+        (org, project))}
+    pending = one(
+        "SELECT COUNT(*) AS n FROM approvals a JOIN executions e ON e.id=a.execution_id "
+        "WHERE a.status='pending' AND e.organization_id=? AND e.project_id=?", (org, project))["n"]
+    anchors = {row["status"]: row["n"] for row in rows(
+        "SELECT an.status, COUNT(*) AS n FROM anchors an JOIN receipts r ON r.id=an.receipt_id "
+        "JOIN executions e ON e.id=r.execution_id WHERE e.organization_id=? AND e.project_id=? GROUP BY an.status",
+        (org, project))}
+    return {
+        "organization_id": org, "project_id": project,
+        "executions": {"total": sum(by_status.values()), "by_status": by_status},
+        "approvals_pending": pending,
+        "receipts": sum(1 for row in rows(
+            "SELECT receipt_id FROM executions WHERE organization_id=? AND project_id=? AND receipt_id IS NOT NULL",
+            (org, project))),
+        "anchors": anchors,
+        "policy_version": POLICY_VERSION,
+    }
+
+@app.get("/api/v1/policies")
+def list_policies(identity: dict = Depends(require_role())):
+    return {"policy_version": POLICY_VERSION, "digest": POLICY_DIGEST, "source": POLICY_SRC,
+            "approval_ttl_seconds": APPROVAL_TTL_SECONDS, "sensitive_fields": sorted(SENSITIVE_FIELDS),
+            "tool": {"name": "approve_invoice", "simulated": True}}
+
+@app.get("/api/v1/agents")
+def list_agents(identity: dict = Depends(require_role())):
+    org, project = scope_of(identity)
+    runs = one("SELECT COUNT(*) AS n FROM executions WHERE organization_id=? AND project_id=? AND agent_id=?",
+               (org, project, AGENT_ID))["n"]
+    return {"agents": [{
+        "agent_id": AGENT_ID, "name": "Procurement Agent", "status": "OPERATIONAL",
+        "allowed_tools": ["approve_invoice"], "policy_version": POLICY_VERSION,
+        "executions": runs,
+    }]}
+
 @app.get("/api/v1/executions/{execution_id}")
 def get_execution(execution_id: str, identity: dict = Depends(require_role())):
     return execution_view(execution_id, identity)
@@ -663,11 +842,26 @@ def list_approvals(identity: dict = Depends(require_role("approver", "admin", "a
     sweep_expired()
     org, project = scope_of(identity)
     pending = rows(
-        "SELECT a.* FROM approvals a JOIN executions e ON e.id=a.execution_id "
+        "SELECT a.*, e.status AS execution_status, e.args_json, e.actor, e.created_at AS execution_created_at "
+        "FROM approvals a JOIN executions e ON e.id=a.execution_id "
         "WHERE a.status='pending' AND e.organization_id=? AND e.project_id=? ORDER BY a.created_at",
         (org, project),
     )
-    return {"approvals": [dict(a) for a in pending]}
+    items = []
+    for approval in pending:
+        item = dict(approval)
+        item.pop("args_json", None)
+        item.pop("execution_status", None)
+        item.pop("execution_created_at", None)
+        item.pop("actor", None)
+        item["execution"] = {
+            "status": approval["execution_status"],
+            "proposal": {"tool": "approve_invoice", "arguments": json.loads(approval["args_json"])},
+            "actor": approval["actor"],
+            "created_at": approval["execution_created_at"],
+        }
+        items.append(item)
+    return {"approvals": items}
 
 
 @app.post("/api/v1/approvals/{approval_id}/decisions")
@@ -1007,14 +1201,11 @@ def identity_from_request(request: Request) -> dict | None:
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() == "bearer" and token in TOKENS:
         return TOKENS[token]
-    token = request.cookies.get("vt_session")
-    return TOKENS.get(token) if token else None
+    return session_identity(request.cookies.get("vt_session"))
 
 
 def csrf_ok(request: Request, form: Any) -> bool:
-    expected = request.cookies.get("vt_csrf", "")
-    supplied = str(form.get("csrf", ""))
-    return bool(expected) and hmac.compare_digest(expected, supplied)
+    return session_csrf_ok(request, str(form.get("csrf", "")))
 
 
 def shell(identity: dict | None, csrf: str, title: str, body: str, flash: str = "") -> str:
@@ -1057,9 +1248,9 @@ async def ui_login(request: Request):
     token = str(form.get("token", "")).strip()
     if token not in TOKENS:
         return HTMLResponse(shell(None, "", "Masuk", LOGIN_BODY + '<div class="flash">Token tidak dikenal.</div>'), status_code=401)
+    session_token, csrf = create_session(TOKENS[token])
     response = RedirectResponse("/ui/dashboard", status_code=303)
-    response.set_cookie("vt_session", token, httponly=True, samesite="strict")
-    response.set_cookie("vt_csrf", secrets.token_hex(16), samesite="strict")
+    set_session_cookies(response, session_token, csrf)
     return response
 
 
@@ -1068,6 +1259,7 @@ async def ui_logout(request: Request):
     form = await request.form()
     if not csrf_ok(request, form):
         return ui_error("CSRF token tidak valid.", 403)
+    revoke_session(request.cookies.get("vt_session"))
     response = RedirectResponse("/ui", status_code=303)
     response.delete_cookie("vt_session")
     response.delete_cookie("vt_csrf")
