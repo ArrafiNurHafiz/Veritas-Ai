@@ -7,51 +7,56 @@ import StateTimeline from '@/components/StateTimeline';
 import ReceiptViewer from '@/components/ReceiptViewer';
 import { 
   Send, 
-  ArrowRight, 
   Check, 
-  Clock, 
-  ShieldAlert, 
-  Sparkles,
-  HelpCircle
+  Lock, 
+  AlertCircle 
 } from 'lucide-react';
 
 export default function TaskCenterPage() {
-  const { policy, submitTask, executions } = useApp();
+  const { policy, submitTask, currentUser } = useApp();
 
   const [invoiceId, setInvoiceId] = useState('INV-2036-009');
-  const [vendor, setVendor] = useState('PT Global Tech');
+  const [vendor, setVendor] = useState('V-ABC');
   const [amountIdr, setAmountIdr] = useState(8500000);
   const [description, setDescription] = useState('Quarterly Datacenter Server Infrastructure Maintenance');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [currentExecution, setCurrentExecution] = useState<ExecutionRecord | null>(null);
+
+  const isAuthorized = currentUser.role === 'operator' || currentUser.role === 'admin';
 
   const presets = [
     {
       title: 'Auto-Approval Flow',
       amount: 3200000,
-      vendor: 'PT Global Tech',
+      vendor: 'V-ABC',
       desc: 'Monthly cloud backup storage quota (Under 5M threshold)',
       expected: 'ALLOWED &rarr; Auto-executed',
     },
     {
       title: 'Approval Gate Flow',
       amount: 8500000,
-      vendor: 'PT Global Tech',
+      vendor: 'V-ABC',
       desc: 'Enterprise hardware server expansion (Over 5M threshold)',
       expected: 'APPROVAL_REQUIRED &rarr; Gate held',
     },
     {
       title: 'High-Value Unverified Vendor',
       amount: 14500000,
-      vendor: 'Foreign Trading Corp',
+      vendor: 'V-EVIL',
       desc: 'Emergency hardware import order (Over limit + unlisted)',
-      expected: 'APPROVAL_REQUIRED &rarr; Rigorous check',
+      expected: 'DENIED &rarr; Unlisted vendor blocked',
     },
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAuthorized) {
+      setSubmitError(`Role "${currentUser.role}" is not permitted to submit tasks. Switch to Operator or Admin.`);
+      return;
+    }
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await submitTask({
         agentId: 'procurement-agent',
@@ -61,6 +66,9 @@ export default function TaskCenterPage() {
         description,
       });
       setCurrentExecution(res);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Task submission failed';
+      setSubmitError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -80,6 +88,39 @@ export default function TaskCenterPage() {
           Dispatch procurement invoice validation requests to autonomous agents and monitor policy mediation.
         </p>
       </div>
+
+      {/* Role Authorization Alert */}
+      {!isAuthorized ? (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start justify-between gap-4 text-[13px] text-amber-900">
+          <div className="flex items-start gap-2.5">
+            <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-semibold">Role Authorization Notice: </strong>
+              You are signed in as <span className="font-mono underline">{currentUser.name} ({currentUser.role})</span>. In accordance with enterprise separation of duties, only <span className="font-mono font-medium">operator</span> or <span className="font-mono font-medium">admin</span> can dispatch procurement tasks.
+            </div>
+          </div>
+          <span className="text-[12px] text-amber-800 shrink-0">
+            (Switch to Marcus Vance - Operator via header)
+          </span>
+        </div>
+      ) : (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-[13px] text-emerald-900">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Authorized Operator: <strong>{currentUser.name}</strong> ({currentUser.role}). Live dispatch to Harness Gateway is active.</span>
+          </div>
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+            Bearer tok-{currentUser.role}
+          </span>
+        </div>
+      )}
+
+      {submitError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-[13px] flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{submitError}</span>
+        </div>
+      )}
 
       {/* Preset Buttons */}
       <div className="space-y-2">
@@ -194,11 +235,17 @@ export default function TaskCenterPage() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full pill-button-filled !h-12 !text-[15px] flex items-center justify-center gap-2 mt-4"
+              disabled={isSubmitting || !isAuthorized}
+              className="w-full pill-button-filled !h-12 !text-[15px] flex items-center justify-center gap-2 mt-4 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-4 h-4" />
-              <span>{isSubmitting ? 'Evaluating via Policy Engine...' : 'Submit Task for Execution'}</span>
+              <span>
+                {!isAuthorized
+                  ? `Forbidden for ${currentUser.role} (Operator only)`
+                  : isSubmitting
+                  ? 'Evaluating via Policy Engine...'
+                  : 'Submit Task for Execution'}
+              </span>
             </button>
           </form>
         </div>

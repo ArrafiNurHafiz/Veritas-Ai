@@ -4,15 +4,10 @@ import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
 import { ExecutionRecord } from '@/lib/types';
 import { 
-  CheckSquare, 
   CheckCircle2, 
-  XCircle, 
   AlertTriangle, 
-  ShieldCheck, 
-  Clock, 
-  UserCheck,
-  Lock,
-  ArrowRight
+  UserCheck, 
+  Lock 
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -23,6 +18,7 @@ export default function ApprovalsPage() {
   const [decisionReason, setDecisionReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
   // Filter items waiting for approval
   const pendingList = executions.filter(
@@ -37,8 +33,13 @@ export default function ApprovalsPage() {
 
   const handleDecision = async (decision: 'APPROVED' | 'REJECTED') => {
     if (!selectedExec) return;
+    if (!isRoleAuthorized) {
+      setDecisionError(`Role "${currentUser.role}" cannot authorize decisions. Only Approver or Admin.`);
+      return;
+    }
     setIsProcessing(true);
     setFeedback(null);
+    setDecisionError(null);
     try {
       await decideApproval(
         selectedExec.id,
@@ -48,6 +49,9 @@ export default function ApprovalsPage() {
       setFeedback(`Execution ${selectedExec.id} was ${decision} by ${currentUser.name}. Signed receipt generated!`);
       setSelectedExec(null);
       setDecisionReason('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Approval decision failed';
+      setDecisionError(msg);
     } finally {
       setIsProcessing(false);
     }
@@ -229,8 +233,15 @@ export default function ApprovalsPage() {
                 />
               </div>
 
+              {decisionError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-[12px] flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{decisionError}</span>
+                </div>
+              )}
+
               <div className="text-[12px] text-[#777b86] italic">
-                * Approval will invoke the simulated <code className="font-mono">approve_invoice</code> tool in the Harness and issue a signed Ed25519 receipt anchored to the Besu private ledger.
+                * Approval will invoke the simulated <code className="font-mono">approve_invoice</code> tool in the Harness and issue a signed Ed25519 receipt with a local mock anchor.
               </div>
             </div>
 
