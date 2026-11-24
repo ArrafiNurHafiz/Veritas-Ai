@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/arrafi/lomba/Harness agent/docs/architecture/frontend/candidate.json",
+    "sha256": "e86e4f2f0db6e3445f3cd4ac1dfcf6d7a85ddae92badeca4a0017b9a7dc72aeb",
+    "bytes": 2543
+  },
+  "artifact": {
+    "path": "/home/arrafi/lomba/Harness agent/docs/architecture/frontend/index.html",
+    "sha256": "e36c1b4687889c423c26e5685fcd3e1e892843574c877009a0bd198e300fec77",
+    "bytes": 922472
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/arrafi/lomba/Harness agent/docs/architecture/frontend/index.finalize.json",
+    "summaryReceipt": "/home/arrafi/lomba/Harness agent/docs/architecture/frontend/index.finalize-summary.json",
+    "browserCheckReceipt": "/home/arrafi/lomba/Harness agent/docs/architecture/frontend/index.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.3.0",
+    "availableVersion": "3.3.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-24T02:10:12.869Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4819,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

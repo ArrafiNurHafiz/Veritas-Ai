@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Frontend — permukaan enterprise — RENCANA MVP",
+    "output": "docs/architecture/frontend/index.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "auto"
+  },
+  "components": [
+    {
+      "id": "step1",
+      "type": "frontend",
+      "label": "Landing",
+      "sublabel": "Tahap 1 · direncanakan",
+      "explanation": "Landing dan sign-in. Home, Features, How It Works dan Documentation mengarahkan pengguna ke sign-in."
+    },
+    {
+      "id": "step2",
+      "type": "backend",
+      "label": "Dashboard",
+      "sublabel": "Tahap 2 · direncanakan",
+      "explanation": "Dashboard organisasi. Overview, agents, tasks, playground, policies, approvals, executions, trust dan settings."
+    },
+    {
+      "id": "step3",
+      "type": "security",
+      "label": "Backend API",
+      "sublabel": "Tahap 3 · direncanakan",
+      "explanation": "Backend API. Semua permintaan frontend menuju backend; tidak ada panggilan browser langsung ke layanan internal."
+    },
+    {
+      "id": "step4",
+      "type": "messagebus",
+      "label": "Status demo",
+      "sublabel": "Tahap 4 · direncanakan",
+      "explanation": "Status dan batas demo. Tampilkan loading, error, status approval dan anchor secara jelas; tiga agent non-procurement diberi label planned."
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge1",
+      "from": "step1",
+      "to": "step2"
+    },
+    {
+      "id": "edge2",
+      "from": "step2",
+      "to": "step3"
+    },
+    {
+      "id": "edge3",
+      "from": "step3",
+      "to": "step4"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Rincian alur",
+      "items": [
+        "Landing dan sign-in: Home, Features, How It Works dan Documentation mengarahkan pengguna ke sign-in.",
+        "Dashboard organisasi: Overview, agents, tasks, playground, policies, approvals, executions, trust dan settings.",
+        "Backend API: Semua permintaan frontend menuju backend; tidak ada panggilan browser langsung ke layanan internal.",
+        "Status dan batas demo: Tampilkan loading, error, status approval dan anchor secara jelas; tiga agent non-procurement diberi label planned."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Batas",
+      "items": [
+        "Rute adalah target MVP; kontrol sesi dan perilaku akses publik masih perlu difinalkan di kontrak.",
+        "Semua komponen dan perilaku merupakan rencana, belum diverifikasi sebagai implementasi."
+      ]
+    }
+  ]
+}
