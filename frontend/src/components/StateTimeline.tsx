@@ -1,6 +1,5 @@
 import React from 'react';
 import { ExecutionEvent, ExecutionStatus } from '@/lib/types';
-import { CheckCircle2, Clock, AlertCircle, XCircle } from 'lucide-react';
 
 interface StateTimelineProps {
   events: ExecutionEvent[];
