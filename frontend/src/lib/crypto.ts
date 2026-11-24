@@ -1,43 +1,26 @@
 /**
- * Cryptographic helpers for VERITAS AI Trust Explorer
- * Implements RFC 8785 JSON Canonicalization Scheme (JCS) representation,
- * SHA-256 hashing via standard Web Crypto API, and mock Ed25519 verification.
+ * Cryptographic helpers for VERITAS AI Trust Explorer.
+ * The Harness is authoritative; these helpers provide an offline fallback.
  */
 
 import { AnchorStatus } from './types';
+import * as api from './api';
+import { canonicalizeJson } from './canonical';
 
-export function canonicalizeJson(obj: unknown): string {
-  if (obj === null || typeof obj !== 'object') {
-    return JSON.stringify(obj);
-  }
-
-  if (Array.isArray(obj)) {
-    return '[' + obj.map(canonicalizeJson).join(',') + ']';
-  }
-
-  const sortedKeys = Object.keys(obj as Record<string, unknown>).sort();
-  const pairs = sortedKeys.map(
-    (key) => `${JSON.stringify(key)}:${canonicalizeJson((obj as Record<string, unknown>)[key])}`
-  );
-  return '{' + pairs.join(',') + '}';
-}
+export { canonicalizeJson };
 
 export async function computeSha256(data: string): Promise<string> {
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
-    // Basic fallback for SSR
     let hash = 0;
-    for (let i = 0; i < data.length; i++) {
+    for (let i = 0; i < data.length; i += 1) {
       hash = (hash << 5) - hash + data.charCodeAt(i);
       hash |= 0;
     }
     return Math.abs(hash).toString(16).padStart(64, '0');
   }
-
-  const encoder = new TextEncoder();
-  const buffer = encoder.encode(data);
-  const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return '0x' + hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  const buffer = new TextEncoder().encode(data);
+  const digest = await window.crypto.subtle.digest('SHA-256', buffer);
+  return '0x' + Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export interface VerificationResult {
@@ -48,45 +31,98 @@ export interface VerificationResult {
   anchorStatus: AnchorStatus;
   anchorMatches: boolean;
   verified: boolean;
+  trustedKey: boolean;
   tampered: boolean;
   details: string[];
+}
+
+interface VerifyOptions {
+  keyId?: string;
+  receiptId?: string;
+  useStoredVerification?: boolean;
+}
+
+function mapLive(result: api.VerificationView, computedHash: string, expected: string, fallback: AnchorStatus): VerificationResult {
+  const status = (String(result.anchor_status || '').toUpperCase() as AnchorStatus) || fallback;
+  const details = [
+    result.hash_matches
+      ? 'Hash valid: the canonical payload matches the signed digest byte-for-byte.'
+      : 'Hash mismatch: the canonical payload differs from the signed digest.',
+    result.signature_valid
+      ? 'Signature valid: Ed25519 check passed against the Harness key.'
+      : 'Signature invalid: Ed25519 verification failed.',
+    result.trusted_key
+      ? 'Trusted key: the signature was made by the active Harness signer.'
+      : 'Untrusted key: the signer is not trusted by this Harness.',
+    result.anchor_matches
+      ? `Local mock anchor: ${result.anchor_status || 'unknown'} and digest matches.`
+      : `Local mock anchor: ${result.anchor_status || 'not confirmed'} (not treated as verified).`,
+  ];
+  return {
+    signatureValid: result.signature_valid,
+    hashMatches: result.hash_matches,
+    computedHash,
+    expectedHash: expected,
+    anchorStatus: status,
+    anchorMatches: result.anchor_matches,
+    verified: result.verified,
+    trustedKey: result.trusted_key,
+    tampered: !result.hash_matches || !result.signature_valid,
+    details,
+  };
 }
 
 export async function verifyReceiptPayload(
   canonicalJsonStr: string,
   storedReceiptDigest: string,
   signature: string,
-  anchorStatus: AnchorStatus
+  anchorStatus: AnchorStatus,
+  options: VerifyOptions = {},
 ): Promise<VerificationResult> {
   const computedHash = await computeSha256(canonicalJsonStr);
+
+  // Authoritative path: verify the stored receipt by ID using the Harness key.
+  if (options.useStoredVerification && options.receiptId) {
+    try {
+      const live = await api.verifyStored(options.receiptId);
+      if (typeof live.verified === 'boolean') return mapLive(live, computedHash, storedReceiptDigest, anchorStatus);
+    } catch {
+      // Fall through to supplied verification or offline fallback.
+    }
+  }
+
+  // Supplied path: used by the tamper sandbox, where the payload has changed.
+  try {
+    const parsed = JSON.parse(canonicalJsonStr);
+    const live = await api.verifySupplied({
+      ...parsed,
+      signature,
+      ...(options.keyId ? { key_id: options.keyId } : {}),
+    });
+    if (typeof live.verified === 'boolean') return mapLive(live, computedHash, storedReceiptDigest, anchorStatus);
+  } catch {
+    // Harness unreachable; use the offline fallback below.
+  }
+
   const hashMatches = computedHash.toLowerCase() === storedReceiptDigest.toLowerCase();
-  
-  // Deterministic simulation: signature is considered valid if the hash matches and has valid format
   const signatureValid = hashMatches && signature.length >= 64;
   const anchorMatches = hashMatches && anchorStatus === 'CONFIRMED';
-  const verified = signatureValid && hashMatches && anchorStatus === 'CONFIRMED';
-  const tampered = !hashMatches || !signatureValid;
+  const trustedKey = signatureValid;
+  const verified = signatureValid && hashMatches && anchorMatches;
 
-  const details: string[] = [];
-  if (!hashMatches) {
-    details.push('Hash mismatch: The computed SHA-256 digest does not match the signed receipt header.');
-  } else {
-    details.push('Hash valid: Recomputed SHA-256 matches canonical digest byte-for-byte.');
-  }
-
-  if (!signatureValid) {
-    details.push('Signature invalid: Ed25519 public key cryptographic check failed.');
-  } else {
-    details.push('Signature valid: Signed by trusted Harness HSM Key ID [harness-ed25519-v1].');
-  }
-
-  if (anchorStatus === 'CONFIRMED') {
-    details.push('Blockchain anchor confirmed on Hyperledger Besu private network (zero discrepancy).');
-  } else if (anchorStatus === 'PENDING') {
-    details.push('Blockchain anchor pending confirmation (block inclusion in progress).');
-  } else {
-    details.push('Blockchain anchor failed or not found on ledger.');
-  }
+  const details = [
+    hashMatches
+      ? 'Hash valid: recomputed SHA-256 matches the receipt digest.'
+      : 'Hash mismatch: recomputed SHA-256 does not match the receipt digest.',
+    signatureValid
+      ? 'Signature format valid (offline simulation; no live Harness key check).'
+      : 'Signature invalid: offline Ed25519 simulation failed.',
+    anchorStatus === 'CONFIRMED'
+      ? 'Local mock anchor confirmed.'
+      : anchorStatus === 'PENDING'
+        ? 'Local mock anchor pending confirmation.'
+        : 'Local mock anchor failed or not found.',
+  ];
 
   return {
     signatureValid,
@@ -96,7 +132,8 @@ export async function verifyReceiptPayload(
     anchorStatus,
     anchorMatches,
     verified,
-    tampered,
+    trustedKey,
+    tampered: !hashMatches || !signatureValid,
     details,
   };
 }
