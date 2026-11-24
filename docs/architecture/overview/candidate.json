@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "VERITAS AI — Arsitektur MVP yang Direncanakan",
+    "output": "docs/architecture/overview/index.html",
+    "quality_profile": "showcase"
+  },
+  "layout": { "mode": "auto" },
+  "components": [
+    { "id": "user", "type": "external", "label": "Pengguna", "sublabel": "Operator / approver / auditor" },
+    { "id": "frontend", "type": "frontend", "label": "Frontend", "sublabel": "Next.js :3000" },
+    { "id": "backend", "type": "backend", "label": "Backend", "sublabel": "FastAPI :8000 · tenant + auth" },
+    { "id": "harness", "type": "security", "label": "Harness", "sublabel": "FastAPI :8002 · policy + approval" },
+    { "id": "agent", "type": "backend", "label": "Agent", "sublabel": "FastAPI :8001 · proposal saja" },
+    { "id": "tool", "type": "messagebus", "label": "Tool simulasi", "sublabel": "Invoice · tanpa pembayaran" },
+    { "id": "chainapi", "type": "backend", "label": "Blockchain adapter", "sublabel": "FastAPI :8003 · anchor" },
+    { "id": "besu", "type": "cloud", "label": "Besu privat", "sublabel": "Hanya digest receipt" },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "Skema milik layanan" }
+  ],
+  "connections": [
+    { "id": "user-frontend", "from": "user", "to": "frontend", "label": "Dashboard" },
+    { "id": "frontend-backend", "from": "frontend", "to": "backend", "label": "HTTPS / sesi" },
+    { "id": "backend-harness", "from": "backend", "to": "harness", "label": "Identitas + tenant", "variant": "security" },
+    { "id": "harness-agent", "from": "harness", "to": "agent", "label": "Minta proposal" },
+    { "id": "harness-tool", "from": "harness", "to": "tool", "label": "Hanya jika diizinkan", "variant": "security" },
+    { "id": "harness-chain", "from": "harness", "to": "chainapi", "label": "Digest receipt" },
+    { "id": "chain-besu", "from": "chainapi", "to": "besu", "label": "Anchor / verify" },
+    { "id": "backend-db", "from": "backend", "to": "postgres", "label": "Skema backend" },
+    { "id": "harness-db", "from": "harness", "to": "postgres", "label": "Skema harness" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Status", "items": ["Seluruh komponen adalah rencana MVP", "Frontend hanya mengakses backend"] },
+    { "dot": "rose", "title": "Batas keamanan", "items": ["Agent hanya mengusulkan tool", "Harness menerapkan default deny dan approval"] },
+    { "dot": "emerald", "title": "Bukti", "items": ["Receipt ditandatangani; hanya hash di chain", "Anchor tidak membuktikan kebenaran AI"] }
+  ]
+}
