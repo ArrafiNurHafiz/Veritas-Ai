@@ -6,6 +6,7 @@ import json
 import hashlib
 import os
 import pathlib
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,33 @@ def check(name, condition):
 
 check("health live", client.get("/health/live").json()["status"] == "ok")
 check("health ready", client.get("/health/ready").json()["database"] == "ok")
+
+# ------------------------------------------------------------------ versioned migrations
+
+versions = [row["version"] for row in harness.rows("SELECT version FROM schema_migrations ORDER BY version")]
+check("migrations applied in order", versions == [1, 2])
+check("migrations rerun as a no-op", harness.migrate() == [] and
+      [row["version"] for row in harness.rows("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2])
+
+legacy_db = os.path.join(tempfile.mkdtemp(), "legacy.db")
+legacy = sqlite3.connect(legacy_db)
+legacy.execute("CREATE TABLE egress_deliveries(id TEXT PRIMARY KEY, idempotency_key TEXT UNIQUE NOT NULL,"
+               " destination TEXT NOT NULL, payload_digest TEXT NOT NULL, sensitive_fields TEXT,"
+               " decision TEXT NOT NULL, reason_code TEXT, actor TEXT, created_at TEXT NOT NULL)")
+legacy.execute("INSERT INTO egress_deliveries(id,idempotency_key,destination,payload_digest,decision,created_at)"
+               " VALUES('dlv_old','legacy-key','mock://crm','digest','ALLOW','2026-01-01T00:00:00Z')")
+legacy.commit(); legacy.close()
+subprocess.run([sys.executable, "-c", "import veritas_harness"],
+               cwd=pathlib.Path(__file__).resolve().parents[1],
+               env={**os.environ, "VERITAS_DB": legacy_db, "VERITAS_LOG_JSON": "0"}, check=True)
+legacy = sqlite3.connect(legacy_db)
+columns = {row[1] for row in legacy.execute("PRAGMA table_info(egress_deliveries)")}
+check("legacy database gains the new columns",
+      {"organization_id", "delivery_status", "delivery_attempts", "last_error"} <= columns)
+backfilled = legacy.execute("SELECT delivery_status, delivery_attempts, organization_id"
+                            " FROM egress_deliveries WHERE id='dlv_old'").fetchone()
+legacy.close()
+check("legacy delivery row is backfilled", backfilled == ("DELIVERED", 1, "org-nexora"))
 
 # AC-01 allowed invoice -> executed, signed receipt, anchor pending then confirmed
 r = task("INV-2036-001", 3_000_000)
