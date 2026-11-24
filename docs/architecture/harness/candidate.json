@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Harness — batas eksekusi terlindungi — RENCANA MVP",
+    "output": "docs/architecture/harness/index.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "auto"
+  },
+  "components": [
+    {
+      "id": "step1",
+      "type": "frontend",
+      "label": "Identitas + scope",
+      "sublabel": "Tahap 1 · direncanakan",
+      "explanation": "Verifikasi identitas dan scope. Verifikasi identitas layanan serta organisasi dan proyek secara independen."
+    },
+    {
+      "id": "step2",
+      "type": "backend",
+      "label": "Validasi proposal",
+      "sublabel": "Tahap 2 · direncanakan",
+      "explanation": "Validasi proposal. Periksa tool dalam registry tetap, skema argumen dan batasan server-side."
+    },
+    {
+      "id": "step3",
+      "type": "security",
+      "label": "Keputusan policy",
+      "sublabel": "Tahap 3 · direncanakan",
+      "explanation": "Keputusan policy. Deny didahulukan; jumlah di atas batas demo memerlukan approval."
+    },
+    {
+      "id": "step4",
+      "type": "messagebus",
+      "label": "Validasi approval",
+      "sublabel": "Tahap 4 · direncanakan",
+      "explanation": "Approval dan pemeriksaan ulang. Ikat keputusan ke execution, hash argumen, policy dan expiry; verifikasi ulang sebelum resume."
+    },
+    {
+      "id": "step5",
+      "type": "database",
+      "label": "Tool + receipt",
+      "sublabel": "Tahap 5 · direncanakan",
+      "explanation": "Tool dan bukti. Jalankan tool simulasi secara idempoten, simpan event dan tanda tangani receipt."
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge1",
+      "from": "step1",
+      "to": "step2"
+    },
+    {
+      "id": "edge2",
+      "from": "step2",
+      "to": "step3"
+    },
+    {
+      "id": "edge3",
+      "from": "step3",
+      "to": "step4"
+    },
+    {
+      "id": "edge4",
+      "from": "step4",
+      "to": "step5"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Rincian alur",
+      "items": [
+        "Verifikasi identitas dan scope: Verifikasi identitas layanan serta organisasi dan proyek secara independen.",
+        "Validasi proposal: Periksa tool dalam registry tetap, skema argumen dan batasan server-side.",
+        "Keputusan policy: Deny didahulukan; jumlah di atas batas demo memerlukan approval.",
+        "Approval dan pemeriksaan ulang: Ikat keputusan ke execution, hash argumen, policy dan expiry; verifikasi ulang sebelum resume.",
+        "Tool dan bukti: Jalankan tool simulasi secara idempoten, simpan event dan tanda tangani receipt."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Batas",
+      "items": [
+        "Kebijakan default deny; ketidaktersediaan dependensi otorisasi tidak boleh membuka akses.",
+        "Semua komponen dan perilaku merupakan rencana, belum diverifikasi sebagai implementasi."
+      ]
+    }
+  ]
+}
