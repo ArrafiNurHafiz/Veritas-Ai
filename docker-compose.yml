@@ -11,6 +11,13 @@ services:
       VERITAS_TOKENS: ${VERITAS_TOKENS:-}
       VERITAS_INTERNAL_TOKEN: ${VERITAS_INTERNAL_TOKEN:-dev-internal}
       VERITAS_LOG_JSON: ${VERITAS_LOG_JSON:-1}
+      # Sessions: server-side, hashed tokens. Turn on Secure cookies behind HTTPS.
+      VERITAS_SESSION_TTL_SECONDS: ${VERITAS_SESSION_TTL_SECONDS:-43200}
+      VERITAS_COOKIE_SECURE: ${VERITAS_COOKIE_SECURE:-0}
+      VERITAS_COOKIE_SAMESITE: ${VERITAS_COOKIE_SAMESITE:-lax}
+      # Demo email accounts; override with a JSON map in any shared environment.
+      VERITAS_DEMO_PASSWORD: ${VERITAS_DEMO_PASSWORD:-demo123456}
+      VERITAS_ACCOUNTS: ${VERITAS_ACCOUNTS:-}
       # Optional single-node EVM anchor; unset keeps the local mock confirm.
       VERITAS_ANCHOR_RPC_URL: ${VERITAS_ANCHOR_RPC_URL:-}
       VERITAS_ANCHOR_FROM: ${VERITAS_ANCHOR_FROM:-}
