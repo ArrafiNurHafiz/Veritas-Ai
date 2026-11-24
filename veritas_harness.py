@@ -1398,9 +1398,11 @@ def ui_dashboard(request: Request, msg: str = ""):
 
     delivery_rows = "".join(
         f'<tr><td>{esc(d["id"][:13])}</td><td>{esc(d["destination"])}</td><td>{badge(d["decision"])}</td>'
-        f'<td>{esc(d["reason_code"] or "-")}</td><td>{esc(d["sensitive_fields"] or "-")}</td><td>{esc(d["created_at"])}</td></tr>'
+        f'<td>{esc(d["reason_code"] or "-")}</td><td>{esc(d["sensitive_fields"] or "-")}</td>'
+        f'<td>{esc(d["delivery_status"] or "-")}{" (" + str(d["delivery_attempts"]) + " percobaan)" if d["delivery_attempts"] else ""}</td>'
+        f'<td>{esc(d["created_at"])}</td></tr>'
         for d in rows("SELECT * FROM egress_deliveries ORDER BY created_at DESC LIMIT 10")
-    ) or '<tr><td colspan="6" class="muted">Belum ada pengiriman.</td></tr>'
+    ) or '<tr><td colspan="7" class="muted">Belum ada pengiriman.</td></tr>'
 
     egress_form = """<div class="card"><form method="post" action="/ui/egress">
 <label>Tujuan</label><select name="destination"><option>mock://crm</option><option>mock://ledger</option><option>https://evil.example</option></select>
@@ -1420,7 +1422,7 @@ def ui_dashboard(request: Request, msg: str = ""):
 <h2>Eksekusi</h2>
 <table><tr><th>ID</th><th>Status</th><th>Keputusan</th><th>Alasan</th><th>Nominal</th><th>Dibuat</th></tr>{execution_rows}</table>
 <h2>Pengiriman data keluar</h2>
-<table><tr><th>ID</th><th>Tujuan</th><th>Keputusan</th><th>Alasan</th><th>Field sensitif</th><th>Waktu</th></tr>{delivery_rows}</table>
+<table><tr><th>ID</th><th>Tujuan</th><th>Keputusan</th><th>Alasan</th><th>Field sensitif</th><th>Pengiriman</th><th>Waktu</th></tr>{delivery_rows}</table>
 """
     return HTMLResponse(shell(identity, csrf, "Dashboard", body, esc(msg) if msg else ""))
 
@@ -1484,10 +1486,11 @@ async def ui_egress(request: Request):
     except (ApiError, TypeError) as exc:
         message = exc.message if isinstance(exc, ApiError) else "Payload harus objek JSON."
         return ui_dashboard(request, msg=message)
-    return ui_dashboard(
-        request,
-        msg=f"Egress {result['decision']} ({result['reason_code']}); panggilan mock receiver: {result['mock_calls']}.",
-    )
+    if result["decision"] == "ALLOW" and not result["delivered"]:
+        outcome = f"pengiriman GAGAL ({result['last_error']}), percobaan {result['delivery_attempts']}."
+    else:
+        outcome = f"panggilan mock receiver: {result['mock_calls']}."
+    return ui_dashboard(request, msg=f"Egress {result['decision']} ({result['reason_code']}); {outcome}")
 
 
 @app.post("/ui/receipts/{receipt_id}/verify")
