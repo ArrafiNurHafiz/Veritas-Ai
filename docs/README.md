@@ -12,7 +12,7 @@ These documents describe the **planned MVP** and the implemented P0 slice. They 
 
 ## Katalog dan panduan
 
-- [Katalog fitur](features.md), [istilah dan status](istilah.md), [batas AI](ai.md), serta [rencana CI/CD](ci-cd.md).
+- [Katalog fitur](features.md), [design system](design_system.md), [panduan hosting](HOSTING.md), [istilah dan status](istilah.md), [batas AI](ai.md), serta [rencana CI/CD](ci-cd.md).
 - [Threat model](threat-model/README.md): pihak, batas kepercayaan, ancaman, kontrol dan risiko terbuka.
 - [Diagram arsitektur dan alur](architecture/README.md): setiap diagram memiliki sumber JSON dan HTML mandiri.
 
