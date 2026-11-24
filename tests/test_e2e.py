@@ -73,21 +73,24 @@ def main():
         "VERITAS_CORS_ORIGINS": "http://localhost:3000",
         "VERITAS_LOG_JSON": "0",
     }
-    server = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "veritas_harness:app", "--port", str(port), "--log-level", "warning"],
-        cwd=ROOT, env=env,
-    )
-    try:
+    def boot(port):
+        server = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "veritas_harness:app", "--port", str(port), "--log-level", "warning"],
+            cwd=ROOT, env=env,
+        )
+        url = f"http://127.0.0.1:{port}"
         for _ in range(60):
             try:
-                with urllib.request.urlopen(base + "/health/live", timeout=1) as response:
+                with urllib.request.urlopen(url + "/health/live", timeout=1) as response:
                     if response.status == 200:
-                        break
+                        return server, url
             except OSError:
                 time.sleep(0.25)
-        else:
-            raise SystemExit("server did not start")
+        server.kill()
+        raise SystemExit("server did not start")
 
+    server, base = boot(port)
+    try:
         operator, approver = Client(base), Client(base)
         check("unauthenticated read is rejected", operator.request("GET", "/api/v1/me")[0] == 401)
         check("wrong password is rejected", operator.login("marcus.vance@nexora.internal", "wrong")[0] == 401)
@@ -185,8 +188,24 @@ def main():
         summary = operator.request("GET", "/api/v1/dashboard/summary")[1]
         check("summary counts the E2E work", summary["executions"]["total"] >= 2, summary)
 
+        pending_task = submit("INV-E2E-3", 8_000_000, "e2e-pending-restart")[1]
+        check("pending approval created before restart", pending_task["decision"] == "APPROVAL_REQUIRED", pending_task)
+
         check("logout succeeds", operator.request("POST", "/api/v1/auth/logout", token=True)[0] == 200)
         check("logout revokes the session", operator.request("GET", "/api/v1/me")[0] == 401)
+        server.terminate()
+        server.wait(timeout=10)
+        server, base = boot(free_port())
+        after = Client(base)
+        check("sessions do not survive a restart", after.request("GET", "/api/v1/me")[0] == 401)
+        after.login("marcus.vance@nexora.internal")
+        check("restart keeps the receipt", after.request("GET", f"/api/v1/receipts/{receipt_id}")[0] == 200)
+        check("restart keeps the confirmed anchor",
+              after.request("POST", f"/api/v1/receipts/{receipt_id}/verify", token=True)[1]["verified"] is True)
+        after.login("sarah.jenkins@nexora.internal")
+        pending_after = after.request("GET", "/api/v1/approvals")[1]["approvals"]
+        check("restart keeps the pending approval",
+              any(item["id"] == pending_task["approval_id"] for item in pending_after))
     finally:
         server.terminate()
         try:
