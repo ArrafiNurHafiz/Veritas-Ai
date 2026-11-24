@@ -16,8 +16,8 @@ is deployed.
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/test_demo.py          # 134 acceptance checks, no framework
-.venv/bin/python tests/test_e2e.py           # 35 checks against a real uvicorn process
+.venv/bin/python tests/test_demo.py          # 136 acceptance checks, no framework
+.venv/bin/python tests/test_e2e.py           # 36 checks against a real uvicorn process
 .venv/bin/python tests/test_seed.py          # 9 seed checks
 .venv/bin/python tests/test_openapi.py       # contract snapshot (use --write after an intended API change)
 .venv/bin/python seed_demo.py                # Nexora demo dataset (idempotent)
@@ -190,6 +190,8 @@ This is one dev node: it proves the client and read-back logic, not consensus.
 ## Observability and keys
 
 - `GET /health/live`, `GET /health/ready`; every response carries `X-Correlation-ID`.
+- Request bodies above `VERITAS_MAX_BODY_BYTES` (default 65536) are rejected with `413`
+  before routing. The check trusts the declared `Content-Length`; chunked bodies are not measured.
 - `GET /metrics` (Prometheus text) requires `X-Internal-Token`. It exposes request
   counters plus execution, denial, tool-call, receipt, anchor and approval gauges.
 - `VERITAS_LOG_JSON=1` turns each request into one JSON line (method, path, status,
@@ -209,3 +211,5 @@ This is one dev node: it proves the client and read-back logic, not consensus.
 - Rule-based egress checks are not DLP.
 - SQLite single connection, single process; org scope comes from the token, but the demo
   UI and egress table remain single-org.
+- No streaming/body-as-you-read cap: the 413 check uses the declared length, so a malicious
+  client that omits `Content-Length` is not stopped by it.

@@ -4,7 +4,7 @@
 
 ## Status implementasi (24 November 2026)
 
-Slice P0 jalan sebagai **satu layanan Harness**, bukan lima. Kode: `veritas_harness.py`, `llm_planner.py`, `seed_demo.py`. Check: `tests/test_demo.py` (134), `tests/test_seed.py` (9) dan `tests/test_openapi.py` (9). UI demo menempel di Harness (`/ui`); Trust Explorer publik di `/trust`; anchor default mock lokal, dengan adapter JSON-RPC opsional ke satu node EVM dev. Belum ada jaringan Besu, kontrak, atau bukti konsensus.
+Slice P0 jalan sebagai **satu layanan Harness**, bukan lima. Kode: `veritas_harness.py`, `llm_planner.py`, `seed_demo.py`. Check: `tests/test_demo.py` (136), `tests/test_seed.py` (9) dan `tests/test_openapi.py` (9). UI demo menempel di Harness (`/ui`); Trust Explorer publik di `/trust`; anchor default mock lokal, dengan adapter JSON-RPC opsional ke satu node EVM dev. Belum ada jaringan Besu, kontrak, atau bukti konsensus.
 
 | Area | Status |
 | --- | --- |
@@ -87,7 +87,7 @@ Slice P0 jalan sebagai **satu layanan Harness**, bukan lima. Kode: `veritas_harn
 
 ## 09 — Verifikasi dan submission [P0]
 
-- [x] **T09.1 — Jalankan tes unit dan integrasi.** Cakup policy, validasi, RBAC, scope, approval race/replay, idempotensi, redaksi dan receipt. **Selesai:** hasil perintah dan kegagalan dicatat; tidak ada klaim lulus untuk tes yang tidak dijalankan. **Status 24 Nov 2026:**134 check `tests/test_demo.py` + 9 `tests/test_seed.py` + 9 `tests/test_openapi.py` lulus.
+- [x] **T09.1 — Jalankan tes unit dan integrasi.** Cakup policy, validasi, RBAC, scope, approval race/replay, idempotensi, redaksi dan receipt. **Selesai:** hasil perintah dan kegagalan dicatat; tidak ada klaim lulus untuk tes yang tidak dijalankan. **Status 24 Nov 2026:**136 check `tests/test_demo.py` + 9 `tests/test_seed.py` + 9 `tests/test_openapi.py` lulus.
 - [ ] **T09.2 — Jalankan E2E dan fault injection.** Uji invoice kecil, invoice di atas batas, approve/reject, user tidak berhak, unknown tool, outbound blocked/allowed, receipt diubah dan chain offline. **Selesai:** semua perilaku kritis dibuktikan, termasuk nol panggilan tool saat pending/denied. **Status 24 Nov 2026:** `tests/test_e2e.py` menjalankan 28 check lewat HTTP terhadap uvicorn nyata (login, policy ALLOW/APPROVAL, RBAC, CSRF, approve, receipt pending vs confirmed, tamper, egress allow/deny/redaksi, logout). Level API lain (race, expiry, chain outage) ada di `tests/test_demo.py`. Fault injection receiver (gagal kirim, retry idempoten) kini ada di `tests/test_demo.py` dan `tests/test_e2e.py`; browser E2E dan RPC timeout berulang belum.
 - [ ] **T09.3 — Siapkan deployment dan rehearsal.** Batasi layanan internal; siapkan HTTPS untuk endpoint publik, konfigurasi secret, health check dan seed sintetis. **Selesai:** demo dapat diulang dari lingkungan bersih; keterbatasan keamanan dan layanan mock terdokumentasi. **Status 24 Nov 2026:**Dockerfile + docker-compose.yml (user non-root, volume SQLite, healthcheck) terbukti jalan lewat build dan smoke container; HTTPS, pembatasan jaringan, dan rehearsal lintas layanan belum.
 - [ ] **T09.4 — Siapkan submission.** Sediakan repo, arsitektur, demo URL, instruksi, video/screenshot dan impact case sesuai aturan yang dikonfirmasi. **Selesai:** jalankan walkthrough end-to-end dan periksa setiap tautan tanpa mengklaim fitur yang belum ada.
