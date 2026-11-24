@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AgentInfo, PolicyRule, ExecutionRecord, UserRole, ExecutionStatus, ExecutionEvent } from './types';
 import { DEMO_USERS, INITIAL_AGENTS, INITIAL_POLICY, INITIAL_EXECUTIONS } from './mockData';
 import { canonicalizeJson, computeSha256 } from './crypto';
+import * as api from './api';
 
 interface AppContextType {
   currentUser: User;
@@ -11,8 +12,9 @@ interface AppContextType {
   setUserRole: (role: UserRole) => void;
   agents: AgentInfo[];
   policy: PolicyRule;
-  updatePolicy: (updated: Partial<PolicyRule>) => void;
+  updatePolicy: (updated: Partial<PolicyRule>) => Promise<void>;
   executions: ExecutionRecord[];
+  refreshExecutions: () => Promise<void>;
   submitTask: (data: {
     agentId: string;
     invoiceId: string;
@@ -25,30 +27,67 @@ interface AppContextType {
     decision: 'APPROVED' | 'REJECTED',
     reason: string
   ) => Promise<void>;
-  resetToDefault: () => void;
+  resetToDefault: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+function readStored<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User>(DEMO_USERS[0]); // Default to Alexa Chen (Admin)
+  const [currentUser, setCurrentUser] = useState<User>(() => readStored('veritas_user', DEMO_USERS[0]));
   const [agents, setAgents] = useState<AgentInfo[]>(INITIAL_AGENTS);
-  const [policy, setPolicy] = useState<PolicyRule>(INITIAL_POLICY);
-  const [executions, setExecutions] = useState<ExecutionRecord[]>(INITIAL_EXECUTIONS);
+  const [policy, setPolicy] = useState<PolicyRule>(() => readStored('veritas_policy', INITIAL_POLICY));
+  const [executions, setExecutions] = useState<ExecutionRecord[]>(
+    () => readStored('veritas_executions', INITIAL_EXECUTIONS),
+  );
 
-  // Load from localStorage on client mount if available
+  // Load from localStorage & sync live state from local backend
   useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem('veritas_user');
-      const savedExecutions = localStorage.getItem('veritas_executions');
-      const savedPolicy = localStorage.getItem('veritas_policy');
+    let isMounted = true;
+    async function initAndSync() {
+      // Live sync from local Harness API (/api/v1)
+      try {
+        const [policyRes, execsRes] = await Promise.all([
+          api.getPolicy().catch(() => null),
+          api.getExecutions(50).catch(() => null),
+        ]);
+        if (!isMounted) return;
 
-      if (savedUser) setCurrentUser(JSON.parse(savedUser));
-      if (savedExecutions) setExecutions(JSON.parse(savedExecutions));
-      if (savedPolicy) setPolicy(JSON.parse(savedPolicy));
-    } catch {
-      // LocalStorage error ignore
+        if (policyRes) {
+          setPolicy(api.mapPolicy(policyRes));
+        }
+
+        if (execsRes && Array.isArray(execsRes.executions) && execsRes.executions.length > 0) {
+          const hydrated = await Promise.all(
+            execsRes.executions.map((e) => api.hydrateExecution(e).catch(() => null))
+          );
+          const valid = hydrated.filter((e): e is ExecutionRecord => e !== null);
+          if (valid.length > 0 && isMounted) {
+            setExecutions(valid);
+          }
+          const agentsRes = await api.getAgents().catch(() => null);
+          if (agentsRes && isMounted) {
+            setAgents(api.mapAgents(agentsRes.agents, valid));
+          }
+        }
+      } catch {
+        // Local backend not reachable, keep local state
+      }
     }
+
+    initAndSync();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Save changes to localStorage
@@ -62,21 +101,82 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser, executions, policy]);
 
+  const refreshExecutions = async () => {
+    try {
+      const [policyRes, execsRes] = await Promise.all([
+        api.getPolicy().catch(() => null),
+        api.getExecutions(50).catch(() => null),
+      ]);
+      if (policyRes) {
+        setPolicy(api.mapPolicy(policyRes));
+      }
+      if (execsRes && Array.isArray(execsRes.executions) && execsRes.executions.length > 0) {
+        const hydrated = await Promise.all(
+          execsRes.executions.map((e) => api.hydrateExecution(e).catch(() => null))
+        );
+        const valid = hydrated.filter((e): e is ExecutionRecord => e !== null);
+        if (valid.length > 0) {
+          setExecutions(valid);
+        }
+        const agentsRes = await api.getAgents().catch(() => null);
+        if (agentsRes) {
+          setAgents(api.mapAgents(agentsRes.agents, valid));
+        }
+      }
+    } catch {
+      // Ignore background sync errors
+    }
+  };
+
   const setUserRole = (role: UserRole) => {
     const target = DEMO_USERS.find((u) => u.role === role) || {
       ...currentUser,
       role,
     };
     setCurrentUser(target);
+    const token = api.ROLE_TOKENS[role] || 'tok-admin';
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('veritas_token', token);
+      localStorage.setItem('veritas_user', JSON.stringify(target));
+    }
+    // Refresh executions under the new role scope
+    refreshExecutions();
   };
 
-  const updatePolicy = (updated: Partial<PolicyRule>) => {
-    setPolicy((prev) => ({
-      ...prev,
+  const updatePolicy = async (updated: Partial<PolicyRule>): Promise<void> => {
+    if (currentUser.role !== 'admin') {
+      throw new api.ApiError(
+        403,
+        'FORBIDDEN',
+        `Role "${currentUser.role}" cannot modify policy rules. Only Admin (Alexa Chen) has policy authority.`
+      );
+    }
+
+    const next = {
+      ...policy,
       ...updated,
-      version: prev.version + 1,
+    };
+
+    try {
+      const live = await api.updatePolicy({
+        auto_approve_limit_idr: next.maxAutoAmountIdr,
+        vendors: next.allowedVendors,
+      });
+      const mapped = api.mapPolicy(live);
+      setPolicy({ ...mapped, name: next.name, updatedAt: new Date().toISOString() });
+      return;
+    } catch (err) {
+      if (err instanceof api.ApiError && (err.status === 403 || err.status === 401 || err.status === 422)) {
+        throw err;
+      }
+      // Backend unavailable: keep the offline demo deterministic.
+    }
+
+    setPolicy({
+      ...next,
+      version: next.version + 1,
       updatedAt: new Date().toISOString(),
-    }));
+    });
   };
 
   const submitTask = async (data: {
@@ -86,6 +186,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     amountIdr: number;
     description?: string;
   }): Promise<ExecutionRecord> => {
+    if (currentUser.role === 'auditor') {
+      throw new api.ApiError(
+        403,
+        'FORBIDDEN',
+        'Auditors have read-only access and cannot submit procurement tasks. Switch to Operator or Admin.'
+      );
+    }
+
+    // Attempt dispatch to real live Harness Gateway
+    try {
+      const idempKey = 'idemp_' + Math.random().toString(36).substring(2, 10);
+      const created = await api.createTask(
+        {
+          invoice_id: data.invoiceId,
+          amount_idr: data.amountIdr,
+          vendor: data.vendor,
+          description: data.description,
+        },
+        idempKey,
+      );
+      if (created && created.execution_id) {
+        const fullRecord = await api.hydrateExecution(created);
+        setExecutions((prev) => [fullRecord, ...prev]);
+        return fullRecord;
+      }
+    } catch (err) {
+      if (err instanceof api.ApiError && (err.status === 403 || err.status === 401)) {
+        throw err;
+      }
+      // Backend not running or call failed; proceed to local deterministic fallback below
+    }
+
     const execId = 'exec_' + Math.random().toString(36).substring(2, 9);
     const now = new Date().toISOString();
     const isOverLimit = data.amountIdr > policy.maxAutoAmountIdr;
@@ -253,6 +385,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     decision: 'APPROVED' | 'REJECTED',
     reason: string
   ): Promise<void> => {
+    if (currentUser.role !== 'approver' && currentUser.role !== 'admin') {
+      throw new api.ApiError(
+        403,
+        'FORBIDDEN',
+        `Role "${currentUser.role}" is not authorized to sign approvals. Only Approvers (Sarah Jenkins) and Admins (Alexa Chen) can decide approvals.`
+      );
+    }
+
+    // Attempt dispatch to real live Harness Gateway
+    const targetItem = executions.find((e) => e.id === executionId);
+    if (targetItem?.approval?.id && !targetItem.approval.id.startsWith('appr_')) {
+      try {
+        const decidedRes = await api.decide(
+          targetItem.approval.id,
+          decision === 'APPROVED' ? 'approve' : 'reject',
+          reason
+        );
+        if (decidedRes?.execution) {
+          const fullRecord = await api.hydrateExecution(decidedRes.execution);
+          setExecutions((prev) => prev.map((item) => (item.id === executionId ? fullRecord : item)));
+          return;
+        }
+      } catch (err) {
+        if (err instanceof api.ApiError && (err.status === 403 || err.status === 401)) {
+          throw err;
+        }
+        // Backend not running; fallback to local state update below
+      }
+    }
+
     const now = new Date().toISOString();
     setExecutions((prev) =>
       prev.map((item) => {
@@ -347,7 +509,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const resetToDefault = () => {
+  const resetToDefault = async (): Promise<void> => {
+    try {
+      await api.resetDemo();
+    } catch {
+      // Backend unavailable: reset only the local demo view.
+    }
     localStorage.removeItem('veritas_user');
     localStorage.removeItem('veritas_executions');
     localStorage.removeItem('veritas_policy');
@@ -355,6 +522,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAgents(INITIAL_AGENTS);
     setPolicy(INITIAL_POLICY);
     setExecutions(INITIAL_EXECUTIONS);
+    await refreshExecutions();
   };
 
   return (
@@ -367,6 +535,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         policy,
         updatePolicy,
         executions,
+        refreshExecutions,
         submitTask,
         decideApproval,
         resetToDefault,
