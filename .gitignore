@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+data/
+.pytest_cache/
+.playwright-mcp/
+
+# Separate Next.js tree with its own Git history; add it as its own repo or submodule.
+frontend/
+
+.env
+.env.*
