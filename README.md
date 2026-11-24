@@ -16,7 +16,7 @@ is deployed.
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/test_demo.py          # 129 acceptance checks, no framework
+.venv/bin/python tests/test_demo.py          # 134 acceptance checks, no framework
 .venv/bin/python tests/test_e2e.py           # 35 checks against a real uvicorn process
 .venv/bin/python tests/test_seed.py          # 9 seed checks
 .venv/bin/python tests/test_openapi.py       # contract snapshot (use --write after an intended API change)
@@ -204,6 +204,8 @@ This is one dev node: it proves the client and read-back logic, not consensus.
 - Anchor is a local mock by default; the optional EVM adapter writes the digest as tx
   calldata on one dev node — no contract, no consensus proof.
 - Only Harness-mediated egress is checked. Provider calls and direct agent networking are uncovered.
+- The LLM adapter is exercised against a fake OpenAI-compatible server only; no real model or
+  provider has been tested, and injection behaviour through one remains unproven.
 - Rule-based egress checks are not DLP.
 - SQLite single connection, single process; org scope comes from the token, but the demo
   UI and egress table remain single-org.
