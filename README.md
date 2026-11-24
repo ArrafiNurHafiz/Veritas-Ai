@@ -11,6 +11,8 @@ service does not exist. Anchoring defaults to a local mock; an optional JSON-RPC
 adapter can submit the digest to a dev EVM node, but no Besu network or contract
 is deployed.
 
+Submission deliverables, judge walkthrough and claim guardrails: [docs/submission.md](docs/submission.md).
+
 ## Run
 
 ```sh
