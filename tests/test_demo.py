@@ -162,6 +162,12 @@ check("AC-09 redacted payload allowed", allowed.json()["decision"] == "ALLOW" an
 retry = client.post("/api/v1/egress/send", headers={**OP, "Idempotency-Key": "egress-3"},
                     json={"destination": "mock://ledger", "payload": {"name": "Nexora", "amount_idr": 8500000}})
 check("AC-09 retry does not duplicate delivery", retry.json()["replayed"] and anchor_count() == 1)
+conflict = client.post("/api/v1/egress/send", headers={**OP, "Idempotency-Key": "egress-3"},
+                       json={"destination": "mock://ledger", "payload": {"name": "Different"}})
+check("same key with a different payload is a conflict",
+      conflict.status_code == 409 and conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT")
+check("rejected failure injection keeps the old counter",
+      client.post("/internal/mock/receiver/failures", headers=INTERNAL, json={"remaining": -1}).status_code == 422)
 
 # ------------------------------------------------------------------ receiver outage and retry
 
