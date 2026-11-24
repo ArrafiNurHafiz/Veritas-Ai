@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "c9c787ca-60f0-45cb-a075-8e823ba32e1c",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/arrafi/lomba/Harness agent/docs/architecture/anchoring-flow/candidate.json",
+  "output": "/home/arrafi/lomba/Harness agent/docs/architecture/anchoring-flow/index.html",
+  "specification": {
+    "sha256": "2b72f0ce5c559fe9236d916092fcfaf964584429a9125a7bc529addc2163bc4c",
+    "bytes": 3043
+  },
+  "artifact": {
+    "sha256": "67fdfda2e20d619208ab8db554d82ce9ef6e30a19326e4eb7ddce1430a2f823e",
+    "bytes": 925099
+  }
+}

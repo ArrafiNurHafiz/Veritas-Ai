@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Bukti — receipt, anchor dan verifikasi — RENCANA MVP",
+    "output": "docs/architecture/anchoring-flow/index.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "auto"
+  },
+  "components": [
+    {
+      "id": "step1",
+      "type": "frontend",
+      "label": "Receipt + event",
+      "sublabel": "Tahap 1 · direncanakan",
+      "explanation": "Receipt dan event. Harness menyimpan metadata execution dan event hash tanpa menempatkan data sensitif di chain."
+    },
+    {
+      "id": "step2",
+      "type": "backend",
+      "label": "Hash + signature",
+      "sublabel": "Tahap 2 · direncanakan",
+      "explanation": "Kanonisasi dan tanda tangan. Kanonisasi JSON, hitung SHA-256, dan tanda tangani receipt dengan Ed25519 serta key ID."
+    },
+    {
+      "id": "step3",
+      "type": "security",
+      "label": "Outbox + anchor",
+      "sublabel": "Tahap 3 · direncanakan",
+      "explanation": "Outbox dan anchor. Kirim digest ke adapter dan Besu melalui permintaan terautentikasi; retry secara aman jika belum tersedia."
+    },
+    {
+      "id": "step4",
+      "type": "messagebus",
+      "label": "Status anchor",
+      "sublabel": "Tahap 4 · direncanakan",
+      "explanation": "Konfirmasi anchor. Tampilkan pending, confirmed atau failed terpisah dari status execution."
+    },
+    {
+      "id": "step5",
+      "type": "database",
+      "label": "Verifikasi",
+      "sublabel": "Tahap 5 · direncanakan",
+      "explanation": "Verifikasi independen. Hitung ulang hash, verifikasi signature dan key tepercaya, lalu bandingkan anchor. Semua harus lolos untuk verified."
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge1",
+      "from": "step1",
+      "to": "step2"
+    },
+    {
+      "id": "edge2",
+      "from": "step2",
+      "to": "step3"
+    },
+    {
+      "id": "edge3",
+      "from": "step3",
+      "to": "step4"
+    },
+    {
+      "id": "edge4",
+      "from": "step4",
+      "to": "step5"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Rincian alur",
+      "items": [
+        "Receipt dan event: Harness menyimpan metadata execution dan event hash tanpa menempatkan data sensitif di chain.",
+        "Kanonisasi dan tanda tangan: Kanonisasi JSON, hitung SHA-256, dan tanda tangani receipt dengan Ed25519 serta key ID.",
+        "Outbox dan anchor: Kirim digest ke adapter dan Besu melalui permintaan terautentikasi; retry secara aman jika belum tersedia.",
+        "Konfirmasi anchor: Tampilkan pending, confirmed atau failed terpisah dari status execution.",
+        "Verifikasi independen: Hitung ulang hash, verifikasi signature dan key tepercaya, lalu bandingkan anchor. Semua harus lolos untuk verified."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Batas",
+      "items": [
+        "Satu node Besu menunjukkan anchoring, bukan konsensus terdesentralisasi.",
+        "Semua komponen dan perilaku merupakan rencana, belum diverifikasi sebagai implementasi."
+      ]
+    }
+  ]
+}

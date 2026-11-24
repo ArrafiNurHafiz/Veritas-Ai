@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/arrafi/lomba/Harness agent/docs/architecture/anchoring-flow/candidate.json",
+    "sha256": "2b72f0ce5c559fe9236d916092fcfaf964584429a9125a7bc529addc2163bc4c",
+    "bytes": 3043
+  },
+  "artifact": {
+    "path": "/home/arrafi/lomba/Harness agent/docs/architecture/anchoring-flow/index.html",
+    "sha256": "67fdfda2e20d619208ab8db554d82ce9ef6e30a19326e4eb7ddce1430a2f823e",
+    "bytes": 925099
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/arrafi/lomba/Harness agent/docs/architecture/anchoring-flow/index.finalize.json",
+    "summaryReceipt": "/home/arrafi/lomba/Harness agent/docs/architecture/anchoring-flow/index.finalize-summary.json",
+    "browserCheckReceipt": "/home/arrafi/lomba/Harness agent/docs/architecture/anchoring-flow/index.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.3.0",
+    "availableVersion": "3.3.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-24T02:10:12.869Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5578,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}
