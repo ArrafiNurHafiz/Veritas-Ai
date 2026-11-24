@@ -9,9 +9,7 @@ import {
   ChevronDown, 
   RotateCcw, 
   Bell, 
-  CheckCircle2, 
-  AlertCircle,
-  ExternalLink 
+  CheckCircle2 
 } from 'lucide-react';
 
 export default function DashboardHeader() {
@@ -25,7 +23,7 @@ export default function DashboardHeader() {
     { role: 'admin', label: 'Admin (Alexa Chen)', desc: 'Full tenant authority & policy control' },
     { role: 'approver', label: 'Approver (Sarah Jenkins)', desc: 'Authorized to approve invoices > Rp 5M' },
     { role: 'operator', label: 'Operator (Marcus Vance)', desc: 'Submits invoice tasks & monitors runs' },
-    { role: 'auditor', label: 'Auditor (Dr. Rachel Kim)', desc: 'Verifies receipts & blockchain anchors' },
+    { role: 'auditor', label: 'Auditor (Dr. Rachel Kim)', desc: 'Verifies receipts & local mock anchors' },
   ];
 
   return (
@@ -41,10 +39,10 @@ export default function DashboardHeader() {
         <div className="flex items-center gap-4">
           <span className="text-[#777b86] flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#17191c]"></span>
-            Besu Private Node :8545 [Healthy]
+            Local mock anchor [Active]
           </span>
           <button
-            onClick={resetToDefault}
+            onClick={() => void resetToDefault()}
             title="Reset demo data to initial state"
             className="hover:text-[#17191c] flex items-center gap-1 text-[11px] underline underline-offset-2"
           >
@@ -96,6 +94,9 @@ export default function DashboardHeader() {
               <span className="w-2 h-2 rounded-full bg-[#17191c]"></span>
               <span className="text-[#777b86]">Role:</span>
               <span className="font-medium text-[#17191c] capitalize">{currentUser.role}</span>
+              <span className="hidden xl:inline font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#f2f2f3] text-[#777b86]">
+                tok-{currentUser.role}
+              </span>
               <ChevronDown className="w-3.5 h-3.5 text-[#777b86] group-hover:rotate-180 transition-transform" />
             </button>
 
@@ -103,7 +104,7 @@ export default function DashboardHeader() {
             <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-[#ececec] p-2 hidden group-hover:block z-50 animate-in fade-in slide-in-from-top-1 duration-150">
               <div className="px-3 py-2 border-b border-[#f2f2f3] mb-1">
                 <p className="text-[11px] font-semibold tracking-wider text-[#979799] uppercase">Switch Demo Role</p>
-                <p className="text-[12px] text-[#777b86]">Test permissions across personas instantly</p>
+                <p className="text-[12px] text-[#777b86]">Active Bearer header switches automatically</p>
               </div>
               <div className="space-y-1">
                 {roles.map((r) => (
@@ -118,7 +119,14 @@ export default function DashboardHeader() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{r.label}</span>
-                      {currentUser.role === r.role && <CheckCircle2 className="w-3.5 h-3.5" />}
+                      <div className="flex items-center gap-1.5">
+                        <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
+                          currentUser.role === r.role ? 'bg-white/20 text-white' : 'bg-[#e5e5e6] text-[#777b86]'
+                        }`}>
+                          tok-{r.role}
+                        </span>
+                        {currentUser.role === r.role && <CheckCircle2 className="w-3.5 h-3.5" />}
+                      </div>
                     </div>
                     <span className={`text-[11px] ${currentUser.role === r.role ? 'text-zinc-300' : 'text-[#777b86]'}`}>
                       {r.desc}

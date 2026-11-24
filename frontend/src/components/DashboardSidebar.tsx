@@ -11,8 +11,7 @@ import {
   Activity, 
   ShieldCheck, 
   Settings,
-  ArrowUpRight,
-  ExternalLink
+  ArrowUpRight
 } from 'lucide-react';
 import { useApp } from '@/lib/store';
 
@@ -155,7 +154,7 @@ export default function DashboardSidebar() {
           </div>
           <div className="flex justify-between">
             <span>Ledger Anchor:</span>
-            <span className="font-mono text-[#17191c]">Hyperledger Besu</span>
+            <span className="font-mono text-[#17191c]">Local mock anchor</span>
           </div>
         </div>
         <div className="pt-1 border-t border-[#f2f2f3]">
