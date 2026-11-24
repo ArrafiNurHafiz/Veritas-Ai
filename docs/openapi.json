@@ -747,6 +747,56 @@
         "summary": "Mock Receiver Calls"
       }
     },
+    "/internal/mock/receiver/failures": {
+      "post": {
+        "operationId": "mock_receiver_failures_internal_mock_receiver_failures_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-internal-token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Internal-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mock Receiver Failures"
+      }
+    },
     "/internal/v1/anchors/sweep": {
       "post": {
         "operationId": "internal_sweep_anchors_internal_v1_anchors_sweep_post",
