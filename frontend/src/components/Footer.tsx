@@ -1,73 +1,151 @@
+'use client';
+
+import React from 'react';
 import Link from 'next/link';
 import { ShieldCheck } from 'lucide-react';
 
+const productLinks = [
+  { label: 'Executive Dashboard', href: '/dashboard' },
+  { label: 'Agent Tasks & Proposals', href: '/dashboard/tasks' },
+  { label: 'Human-in-the-Loop Approvals', href: '/dashboard/approvals' },
+  { label: 'Policy Rules Engine', href: '/dashboard/policies' },
+  { label: 'Cryptographic Trust Explorer', href: '/dashboard/trust' },
+];
+
+const architectureLinks = [
+  { label: 'Deterministic Gate (veritas_harness.py)', href: '/#architecture' },
+  { label: 'Ed25519 Receipts Specification', href: '/#features' },
+  { label: 'Besu EVM Anchor RPC (Optional)', href: '/#architecture' },
+  { label: 'Egress Data Quarantine', href: '/#features' },
+  { label: 'FastAPI REST Endpoints (:8002)', href: '/#architecture' },
+];
+
+const complianceLinks = [
+  { label: 'Zero-Trust Tool Isolation', href: '/#problems' },
+  { label: 'Deny-by-Default Policy Model', href: '/#features' },
+  { label: 'Mathematical Non-Repudiation', href: '/#interactive' },
+  { label: 'Synthetic Demo Isolation (Nexora)', href: '/#quote' },
+  { label: 'Immutable Audit Trail', href: '/dashboard/trust' },
+];
+
 export default function Footer() {
   return (
-    <footer className="bg-[#fafafb] border-t border-[#ececec] py-16">
-      <div className="max-w-[1200px] mx-auto px-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-          {/* Col 1 */}
-          <div className="space-y-4 md:col-span-1">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-[#17191c] flex items-center justify-center text-white">
-                <ShieldCheck className="w-3.5 h-3.5 stroke-[2]" />
+    <footer className="border-t border-[#1C1E24] bg-[#07080A] text-[#8F94A0]">
+      {/* Top section with columns */}
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+          {/* Brand & mission */}
+          <div className="space-y-4 lg:col-span-4">
+            <Link href="/" className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md border border-[#DA5C2B]/40 bg-[#DA5C2B]/10 text-[#DA5C2B]">
+                <ShieldCheck className="h-4 w-4 stroke-[2.2]" />
               </div>
-              <span className="font-display text-[20px] text-[#17191c]">VERITAS AI</span>
-            </div>
-            <p className="text-[14px] text-[#777b86] leading-relaxed">
-              Deterministic trust infrastructure mediating autonomous AI agent actions through policy gateways and signed private blockchain receipts.
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[18px] font-semibold tracking-[-0.03em] text-white">
+                  VERITAS
+                </span>
+                <span className="font-mono text-[9px] font-medium uppercase tracking-[0.18em] text-[#DA5C2B]">
+                  AI
+                </span>
+              </div>
+            </Link>
+
+            <p className="max-w-sm text-[13px] leading-relaxed text-[#7D828F]">
+              The modern governance & control platform for enterprise autonomous agents. Sub-millisecond deterministic policy evaluation, human sign-off gates, and tamper-proof Ed25519 receipts.
             </p>
+
             <div className="pt-2">
-              <span className="inline-block px-3 py-1 bg-[#f2f2f3] text-[#777b86] text-[12px] rounded-full border border-[#ececec]">
-                Private Permissioned Ledger
-              </span>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#232730] bg-[#0E1014] px-3 py-1 font-mono text-[11px] text-[#A6ABB7]">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#22C55E] opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#22C55E]" />
+                </span>
+                <span>Harness Gateway: <strong className="text-white">Active (:8002)</strong></span>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-[#585D6A]">
+                Synthetic Demo Dataset · Nexora Technologies
+              </p>
             </div>
           </div>
 
-          {/* Col 2 */}
-          <div className="space-y-3">
-            <h4 className="text-[14px] font-medium text-[#17191c] uppercase tracking-wider">Product Surfaces</h4>
-            <ul className="space-y-2 text-[14px] text-[#777b86]">
-              <li><Link href="/dashboard" className="hover:text-[#17191c]">Enterprise Dashboard</Link></li>
-              <li><Link href="/dashboard/tasks" className="hover:text-[#17191c]">Procurement Task Center</Link></li>
-              <li><Link href="/dashboard/approvals" className="hover:text-[#17191c]">Human Approval Gate</Link></li>
-              <li><Link href="/dashboard/policies" className="hover:text-[#17191c]">Policy Rule Manager</Link></li>
-              <li><Link href="/dashboard/trust" className="hover:text-[#17191c]">Public Trust Explorer</Link></li>
-            </ul>
-          </div>
+          {/* Nav columns */}
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-3 lg:col-span-8">
+            <div>
+              <h4 className="text-[12px] font-semibold uppercase tracking-wider text-white">
+                Platform
+              </h4>
+              <ul className="mt-4 space-y-2.5 text-[13px]">
+                {productLinks.map((item) => (
+                  <li key={item.label}>
+                    <Link
+                      href={item.href}
+                      className="transition-colors hover:text-[#EDEDED]"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          {/* Col 3 */}
-          <div className="space-y-3">
-            <h4 className="text-[14px] font-medium text-[#17191c] uppercase tracking-wider">Governance & Trust</h4>
-            <ul className="space-y-2 text-[14px] text-[#777b86]">
-              <li><span className="hover:text-[#17191c]">RFC 8785 Canonical JCS</span></li>
-              <li><span className="hover:text-[#17191c]">Ed25519 Cryptographic Signatures</span></li>
-              <li><span className="hover:text-[#17191c]">Hyperledger Besu Private Anchor</span></li>
-              <li><span className="hover:text-[#17191c]">Deny-by-Default Policy Gateway</span></li>
-              <li><span className="hover:text-[#17191c]">Separation of AI Planning & Execution</span></li>
-            </ul>
-          </div>
+            <div>
+              <h4 className="text-[12px] font-semibold uppercase tracking-wider text-white">
+                Architecture
+              </h4>
+              <ul className="mt-4 space-y-2.5 text-[13px]">
+                {architectureLinks.map((item) => (
+                  <li key={item.label}>
+                    <Link
+                      href={item.href}
+                      className="transition-colors hover:text-[#EDEDED]"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          {/* Col 4 */}
-          <div className="space-y-3">
-            <h4 className="text-[14px] font-medium text-[#17191c] uppercase tracking-wider">Hackathon Evaluation</h4>
-            <div className="bg-white p-4 rounded-[16px] border border-[#ececec] space-y-2 text-[13px] text-[#777b86]">
-              <p className="font-medium text-[#17191c]">Demo Tenant: Nexora Technologies</p>
-              <p>Synthetic procurement data only. No cryptocurrency, public tokens, user wallets, or live financial settlements.</p>
-              <div className="pt-1 text-[11px] text-[#979799]">
-                Specification v1.1 Baseline | Nov 2026
-              </div>
+            <div>
+              <h4 className="text-[12px] font-semibold uppercase tracking-wider text-white">
+                Governance & Trust
+              </h4>
+              <ul className="mt-4 space-y-2.5 text-[13px]">
+                {complianceLinks.map((item) => (
+                  <li key={item.label}>
+                    <Link
+                      href={item.href}
+                      className="transition-colors hover:text-[#EDEDED]"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>
 
         {/* Bottom bar */}
-        <div className="border-t border-[#ececec] pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-[13px] text-[#979799]">
-          <p>© 2026 VERITAS AI Systems. Designed with Steep editorial minimalism.</p>
-          <div className="flex items-center gap-6">
-            <Link href="/#docs" className="hover:text-[#17191c]">REST API Contracts</Link>
-            <Link href="/#architecture" className="hover:text-[#17191c]">Threat Model</Link>
-            <Link href="/login" className="hover:text-[#17191c]">Sign In</Link>
+        <div className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-[#1C1E24] pt-8 text-[12px] sm:flex-row">
+          <p className="font-mono text-[#585D6A]">
+            © 2026 VERITAS AI Platform. Built with deterministic zero-trust architecture.
+          </p>
+          <div className="flex items-center gap-6 font-mono text-[11px] text-[#7D828F]">
+            <Link href="/#architecture" className="hover:text-white transition-colors">
+              SPEC v1.1
+            </Link>
+            <span>•</span>
+            <Link href="/#interactive" className="hover:text-white transition-colors">
+              APL ENGINE
+            </Link>
+            <span>•</span>
+            <Link href="/login" className="hover:text-white transition-colors">
+              OPERATOR CONSOLE
+            </Link>
           </div>
         </div>
       </div>
