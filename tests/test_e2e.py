@@ -168,6 +168,20 @@ def main():
                                headers={"Idempotency-Key": "e2e-egress-offlist"}, token=True)[1]["reason_code"]
               == "DESTINATION_NOT_ALLOWED")
 
+        operator.request("POST", "/internal/mock/receiver/failures", {"remaining": 1},
+                         headers={"X-Internal-Token": INTERNAL})
+        outage = operator.request("POST", "/api/v1/egress/send", {
+            "destination": "mock://crm", "payload": {"note": "outage"},
+        }, headers={"Idempotency-Key": "e2e-outage"}, token=True)[1]
+        check("receiver outage reports a failed delivery",
+              outage["decision"] == "ALLOW" and outage["delivered"] is False
+              and outage["delivery_status"] == "FAILED", outage)
+        recovered = operator.request("POST", "/api/v1/egress/send", {
+            "destination": "mock://crm", "payload": {"note": "outage"},
+        }, headers={"Idempotency-Key": "e2e-outage"}, token=True)[1]
+        check("replay after the outage delivers once",
+              recovered["delivered"] and recovered["delivery_attempts"] == 2, recovered)
+
         summary = operator.request("GET", "/api/v1/dashboard/summary")[1]
         check("summary counts the E2E work", summary["executions"]["total"] >= 2, summary)
 
