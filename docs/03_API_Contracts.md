@@ -15,7 +15,7 @@
 
 | Method and route | Purpose |
 | --- | --- |
-| `POST /api/v1/auth/login` | Sign in and establish session. |
+| `POST /api/v1/auth/login` | Sign in and establish session (email/password or demo token). |
 | `GET /api/v1/me` | Current identity. |
 | `GET /api/v1/organizations/current` | Current organization. |
 | `GET /api/v1/dashboard/summary` | Dashboard counts. |

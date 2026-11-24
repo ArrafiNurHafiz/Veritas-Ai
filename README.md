@@ -5,16 +5,18 @@ One service (`veritas_harness.py`), SQLite, deterministic planner (no LLM), simu
 `approve_invoice` tool, Ed25519 receipts, local mock anchor (optional dev-EVM adapter), and an outbound-data gate to a
 local mock receiver.
 
-Status: demo slice only. Agent, Backend and Frontend services do not exist yet. Anchoring
-defaults to a local mock; an optional JSON-RPC adapter can submit the digest to a dev EVM
-node, but no Besu network or contract is deployed.
+Status: Harness backend and its embedded demo UI exist. The Next.js app under
+`frontend/` is present but still renders mock data; a separate Backend or Agent
+service does not exist. Anchoring defaults to a local mock; an optional JSON-RPC
+adapter can submit the digest to a dev EVM node, but no Besu network or contract
+is deployed.
 
 ## Run
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/test_demo.py          # 95 acceptance checks, no framework
+.venv/bin/python tests/test_demo.py          # 117 acceptance checks, no framework
 .venv/bin/python tests/test_seed.py          # 9 seed checks
 .venv/bin/python tests/test_openapi.py       # contract snapshot (use --write after an intended API change)
 .venv/bin/python seed_demo.py                # Nexora demo dataset (idempotent)
@@ -55,11 +57,29 @@ wildcard because credentials are sent):
 export VERITAS_CORS_ORIGINS=http://localhost:3000
 ```
 
-- `POST /api/v1/auth/login` `{"token":"tok-operator"}` → `{user, role, csrf_token}` and
-  `vt_session` + `vt_csrf` cookies (httpOnly session). `POST /api/v1/auth/logout`,
-  `GET /api/v1/me`.
+- `POST /api/v1/auth/login` accepts either demo credentials
+  (`{"email":"marcus.vance@nexora.internal","password":"demo123456"}`) or a demo
+  token (`{"token":"tok-operator"}`), returning `{user, role, csrf_token,
+  expires_in}` plus `vt_session` + `vt_csrf` cookies. Sessions are server-side
+  rows; only their hashes are stored. `POST /api/v1/auth/logout`,
+  `GET /api/v1/me` (adds `email` for email logins).
+- Demo email accounts use the frontend personas: `alexa.chen@nexora.internal`
+  (admin), `sarah.jenkins@nexora.internal` (approver),
+  `marcus.vance@nexora.internal` (operator), `dr.rachel.k@nexora.internal`
+  (auditor). Override the password with `VERITAS_DEMO_PASSWORD` and the whole
+  map with `VERITAS_ACCOUNTS`; these are synthetic accounts, not a user store.
+- Session TTL is `VERITAS_SESSION_TTL_SECONDS` (default 12 hours); logout and
+  expiry both stop cookie authentication. Set `VERITAS_COOKIE_SECURE=1` behind
+  HTTPS and `VERITAS_COOKIE_SAMESITE` for cross-site deployments. Five failed
+  logins per credential per minute answer `429 RATE_LIMITED` (in-process, per
+  worker).
 - Cookie-authenticated mutations must send `X-CSRF-Token` matching the `vt_csrf`
-  cookie, otherwise `403 CSRF_REQUIRED`. Bearer requests need no CSRF header.
+  cookie and the active session, otherwise `403 CSRF_REQUIRED`. Bearer requests
+  need no CSRF header.
+- Read models for the dashboard: `GET /api/v1/executions?status=&limit=&offset=`,
+  `GET /api/v1/dashboard/summary`, `GET /api/v1/policies`, `GET /api/v1/agents`.
+  Approval rows carry `execution.proposal` so the approver view does not need a
+  second request.
 - `POST /api/v1/anchors/{id}/confirm` is admin-only (bearer or cookie+CSRF); the
   `X-Internal-Token` route stays for service-to-service use.
 - Error envelope `{"error":{"code","message","details"},"correlation_id"}`; every
