@@ -472,10 +472,24 @@ if CORS_ORIGINS:
     )
 
 
+MAX_BODY_BYTES = int(os.environ.get("VERITAS_MAX_BODY_BYTES", str(64 * 1024)))
+
 @app.middleware("http")
 async def observability(request: Request, call_next):
     """Correlation ID, JSON access log, and request counters in one pass."""
     request.state.correlation_id = request.headers.get("X-Correlation-ID") or uuid.uuid4().hex
+    # ponytail: declared-length check only; a chunked body without Content-Length is not measured.
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        response = JSONResponse(
+            status_code=413,
+            content={"error": {"code": "PAYLOAD_TOO_LARGE",
+                               "message": f"Request body exceeds {MAX_BODY_BYTES} bytes.",
+                               "details": {}},
+                     "correlation_id": request.state.correlation_id},
+        )
+        response.headers["X-Correlation-ID"] = request.state.correlation_id
+        return response
     started = time.perf_counter()
     response = await call_next(request)
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
