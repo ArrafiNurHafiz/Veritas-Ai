@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS sessions(
   token_hash TEXT PRIMARY KEY, user TEXT NOT NULL, role TEXT NOT NULL,
   org TEXT NOT NULL, project TEXT, email TEXT, csrf_hash TEXT NOT NULL,
   created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT);
+CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 """
 
 DB_PATH = os.environ.get("VERITAS_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "veritas.db"))
@@ -176,13 +177,6 @@ def ensure_columns() -> None:
         for name, ddl in columns:
             if name not in existing:
                 run(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
-    run("UPDATE egress_deliveries SET delivery_status = CASE WHEN decision='ALLOW' THEN 'DELIVERED' ELSE 'SKIPPED' END,"
-        " delivery_attempts = CASE WHEN decision='ALLOW' AND delivery_attempts=0 THEN 1 ELSE delivery_attempts END"
-        " WHERE delivery_status IS NULL")
-    run("UPDATE egress_deliveries SET organization_id=? WHERE organization_id IS NULL", (ORG_ID,))
-
-
-ensure_columns()
 
 
 # --------------------------------------------------------------------------- evidence
@@ -204,6 +198,32 @@ def utc_now() -> str:
 
 def utc_plus(seconds: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def backfill_egress_delivery() -> None:
+    run("UPDATE egress_deliveries SET delivery_status = CASE WHEN decision='ALLOW' THEN 'DELIVERED' ELSE 'SKIPPED' END,"
+        " delivery_attempts = CASE WHEN decision='ALLOW' AND delivery_attempts=0 THEN 1 ELSE delivery_attempts END"
+        " WHERE delivery_status IS NULL")
+    run("UPDATE egress_deliveries SET organization_id=? WHERE organization_id IS NULL", (ORG_ID,))
+
+MIGRATIONS = (
+    (1, ensure_columns),
+    (2, backfill_egress_delivery),
+)
+
+def migrate() -> list[int]:
+    """Apply unapplied migrations in order. Safe to call on every start."""
+    applied = {row["version"] for row in rows("SELECT version FROM schema_migrations")}
+    newly = []
+    for version, step in MIGRATIONS:
+        if version in applied:
+            continue
+        with _LOCK:
+            step()
+            run("INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)", (version, utc_now()))
+        newly.append(version)
+    return newly
+
+migrate()
 
 def _login_key(value: str) -> str:
     return value.strip().lower()
