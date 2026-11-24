@@ -3,27 +3,30 @@
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
 import { 
-  Sliders, 
   ShieldCheck, 
   Save, 
   Plus, 
   Trash2, 
   AlertCircle, 
   Check, 
-  FileCode 
+  Lock
 } from 'lucide-react';
 
 export default function PolicyManagerPage() {
-  const { policy, updatePolicy } = useApp();
+  const { policy, updatePolicy, currentUser } = useApp();
 
   const [threshold, setThreshold] = useState(policy.maxAutoAmountIdr);
   const [vendorList, setVendorList] = useState<string[]>(policy.allowedVendors);
   const [newVendor, setNewVendor] = useState('');
-  const [defaultAction, setDefaultAction] = useState<'DENY' | 'ALLOW'>(policy.defaultAction);
+  const defaultAction = policy.defaultAction;
   const [saved, setSaved] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const isAdmin = currentUser.role === 'admin';
 
   const handleAddVendor = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) return;
     if (newVendor.trim() && !vendorList.includes(newVendor.trim())) {
       setVendorList([...vendorList, newVendor.trim()]);
       setNewVendor('');
@@ -31,17 +34,28 @@ export default function PolicyManagerPage() {
   };
 
   const handleRemoveVendor = (v: string) => {
+    if (!isAdmin) return;
     setVendorList(vendorList.filter((item) => item !== v));
   };
 
-  const handleSave = () => {
-    updatePolicy({
-      maxAutoAmountIdr: Number(threshold),
-      allowedVendors: vendorList,
-      defaultAction: defaultAction,
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  const handleSave = async () => {
+    if (!isAdmin) {
+      setErrorMsg(`Role "${currentUser.role}" has read-only access. Switch to Admin (Alexa Chen) to publish policy changes.`);
+      return;
+    }
+    setErrorMsg(null);
+    try {
+      await updatePolicy({
+        maxAutoAmountIdr: Number(threshold),
+        allowedVendors: vendorList,
+        defaultAction: defaultAction,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update policy';
+      setErrorMsg(msg);
+    }
   };
 
   return (
@@ -62,12 +76,52 @@ export default function PolicyManagerPage() {
 
         <button
           onClick={handleSave}
-          className="pill-button-filled !h-11 !px-6 !text-[14px] flex items-center gap-2"
+          disabled={!isAdmin}
+          className="pill-button-filled !h-11 !px-6 !text-[14px] flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {saved ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
-          <span>{saved ? 'Policy Saved (v' + (policy.version + 1) + ')' : 'Publish Policy Changes'}</span>
+          <span>
+            {!isAdmin
+              ? `Read-Only (${currentUser.role})`
+              : saved
+              ? 'Policy Saved (v' + (policy.version + 1) + ')'
+              : 'Publish Policy Changes'}
+          </span>
         </button>
       </div>
+
+      {/* Role Authorization Alert */}
+      {!isAdmin ? (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start justify-between gap-4 text-[13px] text-amber-900">
+          <div className="flex items-start gap-2.5">
+            <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-semibold">Governance Scope Notice: </strong>
+              You are viewing policies as <span className="font-mono underline">{currentUser.name} ({currentUser.role})</span>. Deterministic policy mutation is restricted to <span className="font-mono font-medium">admin</span>.
+            </div>
+          </div>
+          <span className="text-[12px] text-amber-800 shrink-0">
+            (Switch to Alexa Chen - Admin via top bar)
+          </span>
+        </div>
+      ) : (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-[13px] text-emerald-900">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Policy Authority Active: <strong>{currentUser.name}</strong> ({currentUser.role}). Changes update the deterministic gateway rules.</span>
+          </div>
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+            Bearer tok-admin
+          </span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-[13px] flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
 
       {/* Active Version Info Card */}
       <div className="p-4 rounded-2xl bg-[#fafafb] border border-[#ececec] flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-[13px]">
@@ -108,9 +162,10 @@ export default function PolicyManagerPage() {
               <div className="relative">
                 <input
                   type="number"
+                  disabled={!isAdmin}
                   value={threshold}
                   onChange={(e) => setThreshold(Number(e.target.value))}
-                  className="w-full bg-[#fafafb] border border-[#ececec] rounded-xl px-4 py-3 text-[16px] font-mono text-[#17191c] focus:outline-none focus:border-[#17191c]"
+                  className="w-full bg-[#fafafb] border border-[#ececec] rounded-xl px-4 py-3 text-[16px] font-mono text-[#17191c] focus:outline-none focus:border-[#17191c] disabled:opacity-60 disabled:cursor-not-allowed"
                 />
                 <span className="absolute right-4 top-3.5 text-[13px] text-[#979799]">
                   IDR
@@ -161,14 +216,16 @@ export default function PolicyManagerPage() {
           <form onSubmit={handleAddVendor} className="flex gap-2">
             <input
               type="text"
+              disabled={!isAdmin}
               value={newVendor}
               onChange={(e) => setNewVendor(e.target.value)}
-              placeholder="e.g. Sinar Megah Logistics"
-              className="flex-1 bg-[#fafafb] border border-[#ececec] rounded-xl px-3.5 py-2.5 text-[13px] text-[#17191c] focus:outline-none focus:border-[#17191c]"
+              placeholder={isAdmin ? "e.g. Sinar Megah Logistics" : "Admin required to add vendor"}
+              className="flex-1 bg-[#fafafb] border border-[#ececec] rounded-xl px-3.5 py-2.5 text-[13px] text-[#17191c] focus:outline-none focus:border-[#17191c] disabled:opacity-60 disabled:cursor-not-allowed"
             />
             <button
               type="submit"
-              className="pill-button-filled !h-10 !px-4 !text-[13px] flex items-center gap-1.5"
+              disabled={!isAdmin}
+              className="pill-button-filled !h-10 !px-4 !text-[13px] flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add</span>
@@ -185,13 +242,15 @@ export default function PolicyManagerPage() {
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   <span className="font-medium text-[#17191c]">{v}</span>
                 </div>
-                <button
-                  onClick={() => handleRemoveVendor(v)}
-                  className="text-[#979799] hover:text-rose-600 p-1 transition-colors"
-                  title="Remove vendor"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => handleRemoveVendor(v)}
+                    className="text-[#979799] hover:text-rose-600 p-1 transition-colors"
+                    title="Remove vendor"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

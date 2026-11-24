@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
 import ReceiptViewer from '@/components/ReceiptViewer';
-import { ShieldCheck, Search, Database, Lock, Fingerprint } from 'lucide-react';
+import { ShieldCheck, Fingerprint } from 'lucide-react';
 
 export default function TrustExplorerPage() {
   const { executions } = useApp();
@@ -30,7 +30,7 @@ export default function TrustExplorerPage() {
           Public Trust Explorer
         </h1>
         <p className="text-[16px] text-[#777b86]">
-          Independently verify Ed25519 signatures, RFC 8785 canonical hashes, and Hyperledger Besu on-chain anchors.
+          Independently verify Ed25519 signatures, RFC 8785 canonical hashes, and local mock anchors.
         </p>
       </div>
 
@@ -73,7 +73,10 @@ export default function TrustExplorerPage() {
 
       {/* Main Receipt Viewer Component */}
       {activeReceipt ? (
-        <ReceiptViewer receipt={activeReceipt} />
+        <ReceiptViewer
+          key={activeReceipt.receiptId}
+          receipt={activeReceipt}
+        />
       ) : (
         <div className="bg-[#fafafb] rounded-2xl p-12 border border-[#ececec] text-center space-y-2">
           <p className="text-[14px] text-[#777b86]">

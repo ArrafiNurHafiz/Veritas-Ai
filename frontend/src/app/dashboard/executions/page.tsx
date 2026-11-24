@@ -2,16 +2,12 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
-import { ExecutionRecord, ExecutionStatus } from '@/lib/types';
+import { ExecutionRecord } from '@/lib/types';
 import StateTimeline from '@/components/StateTimeline';
 import ReceiptViewer from '@/components/ReceiptViewer';
 import { 
-  Activity, 
   Search, 
-  Filter, 
   ShieldCheck, 
-  ArrowRight, 
-  FileCode,
   X
 } from 'lucide-react';
 
@@ -126,7 +122,7 @@ export default function ExecutionMonitorPage() {
                     {item.receipt ? (
                       <span className="text-[12px] text-emerald-700 font-medium flex items-center gap-1">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        Besu #{item.receipt.anchor.blockNumber}
+                        {item.receipt.anchor.status || 'PENDING'}
                       </span>
                     ) : (
                       <span className="text-[12px] text-[#979799]">None</span>
