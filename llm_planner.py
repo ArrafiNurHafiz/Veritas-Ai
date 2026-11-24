@@ -31,6 +31,22 @@ def strip_fences(text: str) -> str:
 
 def propose(payload: dict) -> tuple[dict | None, str]:
     """Return (proposal | None, source). None means the caller uses its deterministic planner."""
+    agent_url = os.environ.get("VERITAS_AGENT_URL", "").rstrip("/")
+    if agent_url:
+        token = os.environ.get("VERITAS_AGENT_TOKEN", "")
+        if not token:
+            return {}, "agent_unavailable"
+        try:
+            response = httpx.post(
+                f"{agent_url}/internal/v1/proposals", json=payload,
+                headers={"X-Agent-Token": token}, timeout=5,
+            )
+            response.raise_for_status()
+            proposal = response.json()["proposal"]
+            return (proposal if isinstance(proposal, dict) else {}), "agent_service"
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            # A configured remote agent must fail closed, not silently change planners.
+            return {}, "agent_unavailable"
     base = os.environ.get("VERITAS_LLM_BASE_URL", "").rstrip("/")
     key = os.environ.get("VERITAS_LLM_API_KEY", "")
     model = os.environ.get("VERITAS_LLM_MODEL", "gpt-4o-mini")

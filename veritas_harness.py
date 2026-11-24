@@ -460,7 +460,7 @@ app = FastAPI(title="VERITAS AI Harness", version="0.1.0")
 HTTP_COUNTERS: dict[tuple[str, str], int] = {}
 LOG_JSON = os.environ.get("VERITAS_LOG_JSON") == "1"
 
-CORS_ORIGINS = [origin.strip() for origin in os.environ.get("VERITAS_CORS_ORIGINS", "").split(",") if origin.strip()]
+CORS_ORIGINS = [origin.strip() for origin in os.environ.get("VERITAS_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if origin.strip()]
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -858,6 +858,45 @@ def list_policies(identity: dict = Depends(require_role())):
     return {"policy_version": POLICY_VERSION, "digest": POLICY_DIGEST, "source": POLICY_SRC,
             "approval_ttl_seconds": APPROVAL_TTL_SECONDS, "sensitive_fields": sorted(SENSITIVE_FIELDS),
             "tool": {"name": "approve_invoice", "simulated": True}}
+
+
+@app.put("/api/v1/policies")
+def update_policies(payload: dict, identity: dict = Depends(require_role("admin"))):
+    """Runtime override for the demo. Resets on restart; it is not a signed policy release."""
+    global POLICY_DIGEST
+    limit = payload.get("auto_approve_limit_idr")
+    vendors = payload.get("vendors")
+    cap = payload.get("hard_cap_idr", POLICY_SRC["hard_cap_idr"])
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        raise ApiError(422, "INVALID_LIMIT", "auto_approve_limit_idr must be a positive integer.")
+    if not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0:
+        raise ApiError(422, "INVALID_CAP", "hard_cap_idr must be a positive integer.")
+    if limit > cap:
+        raise ApiError(422, "INVALID_LIMIT", "auto_approve_limit_idr cannot exceed hard_cap_idr.")
+    if vendors is not None:
+        if not isinstance(vendors, list) or len(vendors) > 50 or not all(
+            isinstance(v, str) and v.strip() for v in vendors
+        ):
+            raise ApiError(422, "INVALID_VENDORS", "vendors must be a list of non-empty strings (max 50).")
+        POLICY_SRC["vendors"] = sorted({v.strip() for v in vendors})
+    POLICY_SRC["auto_approve_limit_idr"] = limit
+    POLICY_SRC["hard_cap_idr"] = cap
+    POLICY_DIGEST = sha(canonical(POLICY_SRC))
+    return list_policies(identity)
+
+
+@app.post("/api/v1/demo/reset")
+def reset_demo(identity: dict = Depends(require_role("admin"))):
+    """Restore the synthetic Nexora demo dataset. Demo data only; sessions are kept."""
+    from seed_demo import seed
+
+    for table in ("events", "receipts", "anchors", "approvals", "egress_deliveries",
+                  "invoices", "tool_calls", "mock_inbox", "executions"):
+        run(f"DELETE FROM {table}")
+    summary = seed()
+    return {"status": "reset", "executions": len(summary["executions"]),
+            "receipts": len(summary["receipts"]),
+            "pending_approvals": len(summary["pending_approvals"])}
 
 @app.get("/api/v1/agents")
 def list_agents(identity: dict = Depends(require_role())):
