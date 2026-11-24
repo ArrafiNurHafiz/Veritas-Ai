@@ -6,8 +6,9 @@ One service (`veritas_harness.py`), SQLite, deterministic planner (no LLM), simu
 local mock receiver.
 
 Status: Harness backend and its embedded demo UI exist. The Next.js app under
-`frontend/` is present but still renders mock data; a separate Backend or Agent
-service does not exist. Anchoring defaults to a local mock; an optional JSON-RPC
+`frontend/` is present but still renders mock data; a separate Backend does not
+exist. An optional experimental deterministic Agent service is available locally,
+but is not part of the default deployment. Anchoring defaults to a local mock; an optional JSON-RPC
 adapter can submit the digest to a dev EVM node, but no Besu network or contract
 is deployed.
 
@@ -168,6 +169,32 @@ Model output is untrusted data: `proposal_error` + `evaluate` deny malformed or
 unregistered proposals, and a model-proposed amount above the limit still needs
 human approval. Provider failure or missing config falls back to the deterministic
 planner; the chosen path is recorded in the `PROPOSAL` event (`planner` field).
+
+An experimental separate deterministic agent can instead run locally. Use the same
+nonempty, randomly generated `VERITAS_AGENT_TOKEN` in both processes, and set
+`VERITAS_AGENT_URL=http://127.0.0.1:8001` **only on the Harness process**:
+
+```sh
+VERITAS_AGENT_TOKEN="<local-secret>" .venv/bin/uvicorn agent_service:app --host 127.0.0.1 --port 8001
+VERITAS_AGENT_TOKEN="<local-secret>" VERITAS_AGENT_URL=http://127.0.0.1:8001 .venv/bin/uvicorn veritas_harness:app --host 127.0.0.1 --port 8002
+.venv/bin/python tests/test_agent_service.py
+```
+
+The agent returns proposals only. The Harness validates them and applies policy.
+If the configured agent is unavailable, unauthorized, or returns malformed data,
+the Harness denies the proposal rather than silently switching planners. This
+shared-token HTTP connection is for localhost testing, not production service
+authentication or network isolation.
+
+For the optional two-service local Compose configuration, set
+`VERITAS_AGENT_TOKEN` in your environment, then run:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.agent.yml up --build
+```
+
+The agent has no published host port in this configuration. This does not
+establish a production network or credential isolation boundary.
 
 ## Anchoring
 

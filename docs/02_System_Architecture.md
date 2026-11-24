@@ -2,6 +2,13 @@
 
 **Status:** Planned architecture. The enterprise v1.1 update takes precedence over conflicting v1.0 wording.
 
+Implementation note: the default remains a single Harness. An optional separate
+deterministic `agent_service.py` can be connected to the Harness over localhost
+HTTP with a shared token; `docker-compose.agent.yml` provides an optional local
+two-service configuration. This is not the production service identity or network
+isolation described below. The separate Backend and Blockchain services and
+private Besu network remain planned.
+
 ## Architectural priority
 
 **Control Before Action** is the primary product promise: the harness checks authorization before any protected tool invocation, and pending or denied actions cannot execute. Evidence and anchoring support subsequent verification. The five-service topology below is the architectural target; a smaller hackathon deployment may be used if it preserves the server-side harness and authorization boundary and labels all mocks accurately. This is a delivery option, not a claim that a reduced deployment has been implemented.

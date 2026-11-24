@@ -10,7 +10,15 @@ Prioritas hackathon adalah satu alur procurement end-to-end yang dapat dibuktika
 
 ### Presentasi frontend saat ini
 
-Landing page yang ada menggunakan tipografi editorial, latar warna lembut dan elemen demonstrasi bergerak yang terinspirasi oleh [Steep](https://steep.app/). Pada desktop yang mendukung CSS view timeline, hero menempel saat scroll, teks mengecil dan memudar, sementara kartu workspace yang sama bergerak dari posisi terpisah menuju susunan akhir tanpa crossfade ke kartu pengganti; browser lain dan preferensi reduced motion menggunakan alur normal. Scroll reveal CSS juga digunakan pada bagian berikutnya. Sidebar dashboard menyesuaikan lebar layar. Elemen visual pada landing adalah ilustrasi demo, bukan bukti status layanan sebenarnya.
+Bagian atas landing (navigasi, hero, strip highlight, dan kartu fitur) mengikuti tata letak [Checkly](https://www.checklyhq.com/): permukaan navy gelap, aksen biru, tipografi Inter, hero dua kolom dengan tombol primary/secondary, pill perintah shell, dan panel pratinjau Harness berbingkai jendela browser. Panel pratinjau memuat tiga skenario contoh (IDR 8.500.000, IDR 3.200.000, tool tak dikenal) yang hanya mengubah state lokal dan tidak mengirim request. Strip highlight memakai pola grid logo; tidak ada logo pelanggan fiktif. Ilustrasi landing bukan bukti status layanan sebenarnya.
+
+Bagian platform di bawah hero memakai permukaan gelap yang terinspirasi [Trigger.dev](https://trigger.dev/): panel kontrol dengan tiga tab (policy gate, authorization, receipts) yang berganti otomatis dan berhenti saat di-hover, slider jumlah/vendor yang mengikuti aturan Harness lokal (allowlist, batas otomatis IDR 5.000.000, hard cap IDR 25.000.000), pratinjau antrean approval, dan pratinjau verifikasi receipt. Seluruh keadaan di panel ini adalah ilustrasi statis dan tidak memanggil API. Bagian batas layanan memberi label **Live**, **Optional**, dan **Planned** secara eksplisit; anchor default tetap mock dan Backend BFF belum ada.
+
+Bagian Features memakai tiga ilustrasi vektor orisinal dan kartu yang aktif saat hover, fokus keyboard atau klik; pada layar kecil kartu dapat digeser secara horizontal. Ini adalah presentasi fitur demo, bukan indikasi status layanan langsung.
+
+Marquee di landing menampilkan sorotan fitur demo, bukan logo atau klaim pelanggan. Duplikasi visual dipakai untuk loop tanpa putus dan disembunyikan dari pembaca layar; pengguna reduced motion dapat menggulir daftar secara manual.
+
+Landing membedakan **preview browser berbasis data lokal** dari layanan Harness yang tersedia terpisah. Anchor default Harness adalah mock; Besu dan pemisahan lima layanan masih target. Contoh outbound memeriksa aturan terbatas, bukan DLP menyeluruh. Ilustrasi hasil policy dan verifikasi pada landing tidak memanggil API.
 
 ## Peran
 

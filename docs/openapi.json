@@ -287,6 +287,23 @@
         "summary": "Dashboard Summary"
       }
     },
+    "/api/v1/demo/reset": {
+      "post": {
+        "description": "Restore the synthetic Nexora demo dataset. Demo data only; sessions are kept.",
+        "operationId": "reset_demo_api_v1_demo_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset Demo"
+      }
+    },
     "/api/v1/egress/send": {
       "post": {
         "operationId": "egress_send_api_v1_egress_send_post",
@@ -498,6 +515,43 @@
           }
         },
         "summary": "List Policies"
+      },
+      "put": {
+        "description": "Runtime override for the demo. Resets on restart; it is not a signed policy release.",
+        "operationId": "update_policies_api_v1_policies_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Policies"
       }
     },
     "/api/v1/receipts/{receipt_id}": {
