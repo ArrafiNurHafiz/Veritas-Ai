@@ -24,6 +24,7 @@
 | `POST /api/v1/tasks` | Submit a task; return 202. |
 | `GET /api/v1/tasks/{id}` | Task status. |
 | `GET /api/v1/executions/{id}` | Execution and anchor status. |
+| `POST /api/v1/egress/send` | Policy-checked outbound payload; `Idempotency-Key` required. |
 | `GET /api/v1/executions/{id}/events` | Execution timeline. |
 | `GET, PUT /api/v1/policies/{id}` | Read or update an authorized policy. |
 | `GET /api/v1/approvals` | List authorized pending approvals. |

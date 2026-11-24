@@ -17,7 +17,7 @@ is deployed.
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python tests/test_demo.py          # 117 acceptance checks, no framework
-.venv/bin/python tests/test_e2e.py           # 28 checks against a real uvicorn process
+.venv/bin/python tests/test_e2e.py           # 30 checks against a real uvicorn process
 .venv/bin/python tests/test_seed.py          # 9 seed checks
 .venv/bin/python tests/test_openapi.py       # contract snapshot (use --write after an intended API change)
 .venv/bin/python seed_demo.py                # Nexora demo dataset (idempotent)
@@ -130,6 +130,9 @@ curl -s localhost:8002/internal/mock/receiver/calls -H 'X-Internal-Token: dev-in
 - Approval binds execution, argument hash and policy version; reject/expiry/replay produce zero tool calls.
 - Token carries `org`/`project`; cross-org execution, event and receipt reads return `404`, and approval lists are filtered by scope.
 - Egress allowlist `mock://crm`, `mock://ledger`; fields `customer_secret`, `api_key`, `card_number` are denied.
+- Delivery outcome is recorded separately from the policy verdict (`DELIVERED`, `FAILED`, `SKIPPED`);
+  replaying a failed idempotency key retries delivery and never delivers twice. The mock receiver can be
+  failed on purpose with `POST /internal/mock/receiver/failures {"remaining": n}`.
 
 ## Demo dataset
 
