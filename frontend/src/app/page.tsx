@@ -464,9 +464,13 @@ export default function LandingPage() {
             </div>
           </motion.div>
           <div className="hero-product-detail" aria-hidden="true">
-            <div><span>Tool registry</span><strong>approve_invoice</strong><small>Automatic limit: IDR 5,000,000</small></div>
+            <div><span>Workspace</span><strong>Nexora Technologies</strong><small>Enterprise governance</small></div>
+            <div><span>AI workforce</span><strong>Procurement agent</strong><small>Invoice review</small></div>
             <div><span>Approval gate</span><strong>Human review required</strong><small>Invoice exceeds the automatic limit.</small></div>
+            <div><span>Tool registry</span><strong>approve_invoice</strong><small>Automatic limit: IDR 5,000,000</small></div>
+            <div><span>Policy check</span><strong>Control before action</strong><small>Evaluate before the tool runs.</small></div>
             <div><span>Data protection</span><strong>Outbound request blocked</strong><small>Destination or content did not meet policy.</small></div>
+            <div><span>Execution</span><strong>Awaiting approval</strong><small>The proposed action is held.</small></div>
             <div><span>Evidence</span><strong>Decision recorded</strong><small>Review execution and anchor status.</small></div>
           </div>
           </div>

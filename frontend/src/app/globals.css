@@ -259,8 +259,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: .5rem;
-  min-height: 120px;
-  padding: 1rem;
+  min-height: 94px;
+  padding: .85rem;
   border-radius: 14px;
   background: #f3f4f4;
 }
@@ -314,10 +314,14 @@ body {
       position: relative;
       z-index: 1;
     }
-    .hero-product-detail > div:nth-child(1) { animation-name: fragment-join-left; }
-    .hero-product-detail > div:nth-child(2) { animation-name: fragment-join-upper-left; }
-    .hero-product-detail > div:nth-child(3) { animation-name: fragment-join-upper-right; }
-    .hero-product-detail > div:nth-child(4) { animation-name: fragment-join-right; }
+    .hero-product-detail > div:nth-child(1) { animation-name: fragment-one; }
+    .hero-product-detail > div:nth-child(2) { animation-name: fragment-two; }
+    .hero-product-detail > div:nth-child(3) { animation-name: fragment-three; }
+    .hero-product-detail > div:nth-child(4) { animation-name: fragment-four; }
+    .hero-product-detail > div:nth-child(5) { animation-name: fragment-five; }
+    .hero-product-detail > div:nth-child(6) { animation-name: fragment-six; }
+    .hero-product-detail > div:nth-child(7) { animation-name: fragment-seven; }
+    .hero-product-detail > div:nth-child(8) { animation-name: fragment-eight; }
     .hero-copy:focus-within {
       animation: none;
     }
@@ -327,28 +331,20 @@ body {
     }
     @keyframes hero-product-forward {
       from { opacity: .75; transform: translateY(90px) scale(.83); }
-      to { opacity: 1; transform: translateY(-560px) scale(1); }
+      to { opacity: 1; transform: translateY(-630px) scale(1); }
     }
     @keyframes fragment-join {
       from { transform: translateY(-350px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes fragment-join-left {
-      from { transform: translate(-280px, -580px); }
-      to { opacity: 1; transform: translate(0, 0); }
-    }
-    @keyframes fragment-join-right {
-      from { transform: translate(280px, -580px); }
-      to { opacity: 1; transform: translate(0, 0); }
-    }
-    @keyframes fragment-join-upper-left {
-      from { transform: translate(-120px, -560px); }
-      to { opacity: 1; transform: translate(0, 0); }
-    }
-    @keyframes fragment-join-upper-right {
-      from { transform: translate(120px, -560px); }
-      to { opacity: 1; transform: translate(0, 0); }
-    }
+    @keyframes fragment-one { from { transform: translate(-230px, -760px); } to { transform: translate(0, 0); } }
+    @keyframes fragment-two { from { transform: translate(-470px, -545px); } to { transform: translate(0, 0); } }
+    @keyframes fragment-three { from { transform: translate(470px, -545px); } to { transform: translate(0, 0); } }
+    @keyframes fragment-four { from { transform: translate(230px, -760px); } to { transform: translate(0, 0); } }
+    @keyframes fragment-five { from { transform: translate(-230px, -740px); } to { transform: translate(0, 0); } }
+    @keyframes fragment-six { from { transform: translate(-470px, -535px); } to { transform: translate(0, 0); } }
+    @keyframes fragment-seven { from { transform: translate(470px, -535px); } to { transform: translate(0, 0); } }
+    @keyframes fragment-eight { from { transform: translate(230px, -740px); } to { transform: translate(0, 0); } }
   }
 }
 
