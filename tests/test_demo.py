@@ -50,6 +50,12 @@ def check(name, condition):
 check("health live", client.get("/health/live").json()["status"] == "ok")
 check("health ready", client.get("/health/ready").json()["database"] == "ok")
 
+too_large = client.post("/api/v1/tasks", headers={**OP, "Idempotency-Key": "huge-1"},
+                        json={"payload": {"invoice_id": "INV-HUGE", "blob": "x" * (harness.MAX_BODY_BYTES + 1)}})
+check("oversized body is rejected", too_large.status_code == 413
+      and too_large.json()["error"]["code"] == "PAYLOAD_TOO_LARGE")
+check("oversized rejection keeps the correlation header", bool(too_large.headers.get("X-Correlation-ID")))
+
 # ------------------------------------------------------------------ versioned migrations
 
 versions = [row["version"] for row in harness.rows("SELECT version FROM schema_migrations ORDER BY version")]

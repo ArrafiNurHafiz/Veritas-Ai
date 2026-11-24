@@ -188,6 +188,12 @@ def main():
         summary = operator.request("GET", "/api/v1/dashboard/summary")[1]
         check("summary counts the E2E work", summary["executions"]["total"] >= 2, summary)
 
+        huge_status, huge = operator.request("POST", "/api/v1/tasks", {
+            "payload": {"invoice_id": "INV-HUGE", "blob": "x" * (70 * 1024)},
+        }, headers={"Idempotency-Key": "e2e-huge"}, token=True)
+        check("oversized body is rejected over HTTP",
+              huge_status == 413 and huge["error"]["code"] == "PAYLOAD_TOO_LARGE", huge)
+
         pending_task = submit("INV-E2E-3", 8_000_000, "e2e-pending-restart")[1]
         check("pending approval created before restart", pending_task["decision"] == "APPROVAL_REQUIRED", pending_task)
 
