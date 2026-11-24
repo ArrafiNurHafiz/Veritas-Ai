@@ -1,0 +1,27 @@
+services:
+  harness:
+    build: .
+    ports:
+      - "8002:8002"
+    environment:
+      VERITAS_DB: /data/veritas.db
+      # Frontend origin for the separate frontend service; add more, comma-separated.
+      VERITAS_CORS_ORIGINS: ${VERITAS_CORS_ORIGINS:-http://localhost:3000}
+      # Override in any demo that is not localhost.
+      VERITAS_TOKENS: ${VERITAS_TOKENS:-}
+      VERITAS_INTERNAL_TOKEN: ${VERITAS_INTERNAL_TOKEN:-dev-internal}
+      VERITAS_LOG_JSON: ${VERITAS_LOG_JSON:-1}
+      # Optional single-node EVM anchor; unset keeps the local mock confirm.
+      VERITAS_ANCHOR_RPC_URL: ${VERITAS_ANCHOR_RPC_URL:-}
+      VERITAS_ANCHOR_FROM: ${VERITAS_ANCHOR_FROM:-}
+    volumes:
+      - veritas-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  veritas-data:
