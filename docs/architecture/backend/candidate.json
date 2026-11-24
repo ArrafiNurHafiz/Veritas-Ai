@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Backend — identitas dan API facade — RENCANA MVP",
+    "output": "docs/architecture/backend/index.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "auto"
+  },
+  "components": [
+    {
+      "id": "step1",
+      "type": "frontend",
+      "label": "Sesi pengguna",
+      "sublabel": "Tahap 1 · direncanakan",
+      "explanation": "Sesi pengguna. Autentikasi pengguna; gunakan perlindungan CSRF sesuai mekanisme sesi."
+    },
+    {
+      "id": "step2",
+      "type": "backend",
+      "label": "Scope tenant",
+      "sublabel": "Tahap 2 · direncanakan",
+      "explanation": "Konteks tenant. Turunkan organisasi dari sesi terverifikasi dan otorisasi setiap proyek serta objek."
+    },
+    {
+      "id": "step3",
+      "type": "security",
+      "label": "Data backend",
+      "sublabel": "Tahap 3 · direncanakan",
+      "explanation": "Data milik backend. Kelola organisasi, user, membership, registrasi agent dan tugas pada skema milik layanan."
+    },
+    {
+      "id": "step4",
+      "type": "messagebus",
+      "label": "Facade internal",
+      "sublabel": "Tahap 4 · direncanakan",
+      "explanation": "Facade internal. Kirim permintaan terautentikasi ke Harness; jangan proxy URL arbitrer dari Agent."
+    },
+    {
+      "id": "step5",
+      "type": "database",
+      "label": "Observabilitas",
+      "sublabel": "Tahap 5 · direncanakan",
+      "explanation": "Observabilitas. Pertahankan correlation ID, log terstruktur dan respons error tanpa stack trace."
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge1",
+      "from": "step1",
+      "to": "step2"
+    },
+    {
+      "id": "edge2",
+      "from": "step2",
+      "to": "step3"
+    },
+    {
+      "id": "edge3",
+      "from": "step3",
+      "to": "step4"
+    },
+    {
+      "id": "edge4",
+      "from": "step4",
+      "to": "step5"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Rincian alur",
+      "items": [
+        "Sesi pengguna: Autentikasi pengguna; gunakan perlindungan CSRF sesuai mekanisme sesi.",
+        "Konteks tenant: Turunkan organisasi dari sesi terverifikasi dan otorisasi setiap proyek serta objek.",
+        "Data milik backend: Kelola organisasi, user, membership, registrasi agent dan tugas pada skema milik layanan.",
+        "Facade internal: Kirim permintaan terautentikasi ke Harness; jangan proxy URL arbitrer dari Agent.",
+        "Observabilitas: Pertahankan correlation ID, log terstruktur dan respons error tanpa stack trace."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Batas",
+      "items": [
+        "Pilihan endpoint dan beberapa rincian kontrak masih terbuka; lihat dokumen API.",
+        "Semua komponen dan perilaku merupakan rencana, belum diverifikasi sebagai implementasi."
+      ]
+    }
+  ]
+}

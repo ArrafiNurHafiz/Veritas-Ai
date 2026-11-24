@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "961c1d0e-488a-480b-8441-ad68b558a321",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/arrafi/lomba/Harness agent/docs/architecture/backend/candidate.json",
+  "output": "/home/arrafi/lomba/Harness agent/docs/architecture/backend/index.html",
+  "specification": {
+    "sha256": "e26316ad7b15f40844111006528fc47753d950d33a41b0ef1350cd1573347fdd",
+    "bytes": 2846
+  },
+  "artifact": {
+    "sha256": "a267e07c8849b47e7dffd4389029b2d07e5bab8050881bc6da0b4ba56685a843",
+    "bytes": 924908
+  }
+}
