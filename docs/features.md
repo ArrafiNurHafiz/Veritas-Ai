@@ -10,7 +10,7 @@ Prioritas hackathon adalah satu alur procurement end-to-end yang dapat dibuktika
 
 ### Presentasi frontend saat ini
 
-Landing page yang ada menggunakan tipografi editorial, latar warna lembut dan elemen demonstrasi bergerak yang terinspirasi oleh [Steep](https://steep.app/). Pada desktop yang mendukung CSS view timeline, hero menempel saat scroll, teks mengecil dan memudar, sementara fragmen bergerak menuju ilustrasi workspace yang menyatu; browser lain dan preferensi reduced motion menggunakan alur normal. Scroll reveal CSS juga digunakan pada bagian berikutnya. Sidebar dashboard menyesuaikan lebar layar. Elemen visual pada landing adalah ilustrasi demo, bukan bukti status layanan sebenarnya.
+Landing page yang ada menggunakan tipografi editorial, latar warna lembut dan elemen demonstrasi bergerak yang terinspirasi oleh [Steep](https://steep.app/). Pada desktop yang mendukung CSS view timeline, hero menempel saat scroll, teks mengecil dan memudar, sementara kartu workspace yang sama bergerak dari posisi terpisah menuju susunan akhir tanpa crossfade ke kartu pengganti; browser lain dan preferensi reduced motion menggunakan alur normal. Scroll reveal CSS juga digunakan pada bagian berikutnya. Sidebar dashboard menyesuaikan lebar layar. Elemen visual pada landing adalah ilustrasi demo, bukan bukti status layanan sebenarnya.
 
 ## Peran
 
