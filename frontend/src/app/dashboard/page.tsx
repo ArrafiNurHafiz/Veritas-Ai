@@ -4,26 +4,26 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/lib/store';
 import { 
-  Bot, 
   CheckCircle2, 
   Clock, 
   ShieldAlert, 
   ArrowRight, 
   Send, 
-  ExternalLink,
   ChevronRight,
-  TrendingUp,
-  ShieldCheck,
-  Check
+  ShieldCheck, 
+  Check 
 } from 'lucide-react';
 
 export default function DashboardOverview() {
-  const { executions, agents, policy, submitTask, currentUser } = useApp();
+  const { executions, policy, submitTask, currentUser } = useApp();
 
   const [quickAmount, setQuickAmount] = useState('8500000');
-  const [quickVendor, setQuickVendor] = useState('PT Global Tech');
+  const [quickVendor, setQuickVendor] = useState('V-ABC');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedMessage, setSubmittedMessage] = useState<string | null>(null);
+  const [quickError, setQuickError] = useState<string | null>(null);
+
+  const isCanSubmit = currentUser.role === 'operator' || currentUser.role === 'admin';
 
   // Computations
   const totalExecutions = executions.length;
@@ -39,8 +39,13 @@ export default function DashboardOverview() {
 
   const handleQuickSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isCanSubmit) {
+      setQuickError(`Role "${currentUser.role}" cannot submit tasks. Switch to Operator or Admin.`);
+      return;
+    }
     setIsSubmitting(true);
     setSubmittedMessage(null);
+    setQuickError(null);
     try {
       const amt = Number(quickAmount) || 0;
       const res = await submitTask({
@@ -52,6 +57,9 @@ export default function DashboardOverview() {
       });
       setSubmittedMessage(`Task ${res.id} queued -> Status: ${res.status}`);
       setTimeout(() => setSubmittedMessage(null), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Quick submit failed';
+      setQuickError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -174,10 +182,9 @@ export default function DashboardOverview() {
                   onChange={(e) => setQuickVendor(e.target.value)}
                   className="w-full bg-[#fafafb] border border-[#ececec] rounded-xl px-3.5 py-2.5 text-[14px] text-[#17191c] focus:outline-none focus:border-[#17191c]"
                 >
-                  <option value="PT Global Tech">PT Global Tech (Whitelisted)</option>
-                  <option value="Nvidia Enterprise">Nvidia Enterprise (Whitelisted)</option>
-                  <option value="AWS Cloud Services">AWS Cloud Services (Whitelisted)</option>
-                  <option value="Unknown Overseas Trading">Unknown Overseas Trading (Unverified)</option>
+                  <option value="V-ABC">V-ABC (Whitelisted)</option>
+                  <option value="V-XYZ">V-XYZ (Whitelisted)</option>
+                  <option value="V-EVIL">Unknown Overseas Trading (Unverified)</option>
                 </select>
               </div>
 
@@ -226,13 +233,26 @@ export default function DashboardOverview() {
 
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="pill-button-filled !h-10 !px-6 !text-[13px] flex items-center gap-2"
+                disabled={isSubmitting || !isCanSubmit}
+                className="pill-button-filled !h-10 !px-6 !text-[13px] flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <span>{isSubmitting ? 'Evaluating Policy...' : 'Submit to Harness'}</span>
+                <span>
+                  {!isCanSubmit
+                    ? `Role ${currentUser.role} (Operator only)`
+                    : isSubmitting
+                    ? 'Evaluating Policy...'
+                    : 'Submit to Harness'}
+                </span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {quickError && (
+              <div className="p-3 rounded-xl bg-rose-50 text-rose-900 border border-rose-200 text-[13px] flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-rose-600" />
+                <span>{quickError}</span>
+              </div>
+            )}
 
             {submittedMessage && (
               <div className="p-3 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-[13px] flex items-center gap-2">
@@ -291,7 +311,7 @@ export default function DashboardOverview() {
           <div className="space-y-1">
             <h3 className="font-display text-[22px] text-[#17191c]">Recent Agent Executions</h3>
             <p className="text-[13px] text-[#777b86]">
-              Deterministic progression: Planning &rarr; Policy Gate &rarr; Human Sign-off &rarr; Sandboxed Tool &rarr; Besu Anchor.
+              Deterministic progression: Planning &rarr; Policy Gate &rarr; Human Sign-off &rarr; Sandboxed Tool &rarr; Mock Anchor.
             </p>
           </div>
           <Link
@@ -318,7 +338,6 @@ export default function DashboardOverview() {
             </thead>
             <tbody className="divide-y divide-[#ececec]">
               {executions.slice(0, 6).map((item) => {
-                const isOverLimit = item.payload.amountIdr > policy.maxAutoAmountIdr;
                 return (
                   <tr key={item.id} className="hover:bg-[#fafafb] transition-colors">
                     <td className="px-6 py-4 font-mono font-medium text-[#17191c]">

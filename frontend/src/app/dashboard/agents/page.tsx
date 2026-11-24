@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useApp } from '@/lib/store';
-import { Bot, CheckCircle2, Shield, Wrench, AlertCircle, Layers } from 'lucide-react';
+import { Bot, CheckCircle2, Wrench, AlertCircle } from 'lucide-react';
 
 export default function AgentsPage() {
   const { agents } = useApp();

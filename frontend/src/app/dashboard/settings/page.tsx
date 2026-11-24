@@ -3,7 +3,7 @@
 import React from 'react';
 import { useApp } from '@/lib/store';
 import { DEMO_USERS } from '@/lib/mockData';
-import { Building2, Key, Server, Users, ShieldAlert } from 'lucide-react';
+import { Building2, Key, Server, Users } from 'lucide-react';
 
 export default function SettingsPage() {
   const { currentUser } = useApp();
@@ -95,23 +95,23 @@ export default function SettingsPage() {
               <Server className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-display text-[20px] text-[#17191c]">Hyperledger Besu Node</h3>
-              <p className="text-[12px] text-[#777b86]">Private permissioned blockchain RPC</p>
+              <h3 className="font-display text-[20px] text-[#17191c]">Local Mock Anchor</h3>
+              <p className="text-[12px] text-[#777b86]">Digest anchoring simulated in SQLite (no external chain)</p>
             </div>
           </div>
 
           <div className="space-y-3 text-[13px]">
             <div className="flex justify-between py-2 border-b border-[#ececec]">
               <span className="text-[#777b86]">RPC Endpoint:</span>
-              <span className="font-mono text-[#17191c]">http://besu.internal:8545</span>
+              <span className="font-mono text-[#17191c]">in-process (SQLite)</span>
             </div>
             <div className="flex justify-between py-2 border-b border-[#ececec]">
               <span className="text-[#777b86]">Chain ID:</span>
-              <span className="font-mono text-[#17191c]">1337 (Permissioned)</span>
+              <span className="font-mono text-[#17191c]">n/a (mock)</span>
             </div>
             <div className="flex justify-between py-2 border-b border-[#ececec]">
-              <span className="text-[#777b86]">Consensus:</span>
-              <span className="text-[#17191c]">QBFT (Proof-of-Authority)</span>
+              <span className="text-[#777b86]">Confirmation:</span>
+              <span className="text-[#17191c]">Admin/internal mock confirm</span>
             </div>
             <div className="flex justify-between py-2">
               <span className="text-[#777b86]">User Wallets / Gas:</span>
