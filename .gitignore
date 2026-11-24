@@ -7,7 +7,7 @@ data/
 .playwright-mcp/
 
 # Separate Next.js tree with its own Git history; add it as its own repo or submodule.
-frontend/
+/frontend/
 
 .env
 .env.*
