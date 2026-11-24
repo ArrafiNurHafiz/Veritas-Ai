@@ -1,34 +1,87 @@
 services:
+  agent:
+    build: .
+    entrypoint: ["uvicorn"]
+    command: ["agent_service:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      VERITAS_AGENT_TOKEN: ${VERITAS_AGENT_TOKEN:-dev-agent-token}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks: [veritas]
+
   harness:
     build: .
-    ports:
-      - "8002:8002"
     environment:
       VERITAS_DB: /data/veritas.db
-      # Frontend origin for the separate frontend service; add more, comma-separated.
-      VERITAS_CORS_ORIGINS: ${VERITAS_CORS_ORIGINS:-http://localhost:3000}
-      # Override in any demo that is not localhost.
+      VERITAS_CORS_ORIGINS: ${VERITAS_CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000,http://127.0.0.1:3000}
+      VERITAS_AGENT_URL: http://agent:8001
+      VERITAS_AGENT_TOKEN: ${VERITAS_AGENT_TOKEN:-dev-agent-token}
       VERITAS_TOKENS: ${VERITAS_TOKENS:-}
       VERITAS_INTERNAL_TOKEN: ${VERITAS_INTERNAL_TOKEN:-dev-internal}
-      VERITAS_LOG_JSON: ${VERITAS_LOG_JSON:-1}
-      # Sessions: server-side, hashed tokens. Turn on Secure cookies behind HTTPS.
+      VERITAS_LOG_JSON: ${VERITAS_LOG_JSON:-0}
       VERITAS_SESSION_TTL_SECONDS: ${VERITAS_SESSION_TTL_SECONDS:-43200}
       VERITAS_COOKIE_SECURE: ${VERITAS_COOKIE_SECURE:-0}
       VERITAS_COOKIE_SAMESITE: ${VERITAS_COOKIE_SAMESITE:-lax}
-      # Demo email accounts; override with a JSON map in any shared environment.
       VERITAS_DEMO_PASSWORD: ${VERITAS_DEMO_PASSWORD:-demo123456}
       VERITAS_ACCOUNTS: ${VERITAS_ACCOUNTS:-}
-      # Optional single-node EVM anchor; unset keeps the local mock confirm.
       VERITAS_ANCHOR_RPC_URL: ${VERITAS_ANCHOR_RPC_URL:-}
       VERITAS_ANCHOR_FROM: ${VERITAS_ANCHOR_FROM:-}
+    depends_on:
+      agent:
+        condition: service_healthy
     volumes:
       - veritas-data:/data
+    # entrypoint.sh seeds the synthetic Nexora dataset idempotently before uvicorn.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health/ready', timeout=2)"]
       interval: 10s
       timeout: 3s
-      retries: 5
+      retries: 10
     restart: unless-stopped
+    networks: [veritas]
+
+  frontend:
+    build: ./frontend
+    environment:
+      HARNESS_URL: http://harness:8002
+      NEXT_PUBLIC_HARNESS_URL: http://harness:8002
+    depends_on:
+      harness:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks: [veritas]
+
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    environment:
+      VERITAS_SITE_ADDRESS: ${VERITAS_SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [veritas]
 
 volumes:
   veritas-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  veritas:

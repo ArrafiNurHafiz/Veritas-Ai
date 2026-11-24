@@ -1,0 +1,22 @@
+# Local default: http://localhost:8080
+# For a domain behind an edge proxy that terminates TLS, keep auto_https off.
+# If the origin is exposed directly on 80/443, remove the global block below
+# and let Caddy obtain certificates automatically.
+{
+	auto_https off
+}
+
+{$VERITAS_SITE_ADDRESS::80} {
+	reverse_proxy frontend:3000
+}
+
+:80 {
+	reverse_proxy frontend:3000
+}
+
+# Some edge proxies connect to the origin over HTTPS. Serve a local
+# self-signed certificate on 443 for that case; the edge owns the public cert.
+https://veritas.rapydev.my.id {
+	tls internal
+	reverse_proxy frontend:3000
+}

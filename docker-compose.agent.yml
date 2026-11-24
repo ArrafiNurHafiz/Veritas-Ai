@@ -1,0 +1,21 @@
+# Optional local agent service. Combine with docker-compose.yml.
+services:
+  harness:
+    environment:
+      VERITAS_AGENT_URL: http://agent:8001
+      VERITAS_AGENT_TOKEN: ${VERITAS_AGENT_TOKEN:?Set VERITAS_AGENT_TOKEN to a local secret}
+    depends_on:
+      agent:
+        condition: service_healthy
+
+  agent:
+    build: .
+    entrypoint: ["uvicorn"]
+    command: ["agent_service:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      VERITAS_AGENT_TOKEN: ${VERITAS_AGENT_TOKEN:?Set VERITAS_AGENT_TOKEN to a local secret}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

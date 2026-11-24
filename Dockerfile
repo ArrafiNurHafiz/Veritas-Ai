@@ -9,10 +9,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY veritas_harness.py llm_planner.py anchor_chain.py seed_demo.py ./
+COPY veritas_harness.py llm_planner.py agent_service.py anchor_chain.py seed_demo.py entrypoint.sh ./
+RUN chmod +x entrypoint.sh
 
 RUN useradd --system --uid 10001 veritas && mkdir -p /data && chown veritas /data
 USER veritas
 
 EXPOSE 8002
-CMD ["uvicorn", "veritas_harness:app", "--host", "0.0.0.0", "--port", "8002"]
+ENTRYPOINT ["./entrypoint.sh"]
