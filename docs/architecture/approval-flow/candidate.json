@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Alur approval procurement — RENCANA MVP",
+    "output": "docs/architecture/approval-flow/index.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "auto"
+  },
+  "components": [
+    {
+      "id": "step1",
+      "type": "frontend",
+      "label": "Invoice diajukan",
+      "sublabel": "Tahap 1 · direncanakan",
+      "explanation": "Invoice diajukan. Operator mengajukan invoice sintetis IDR 8.500.000 melalui Backend."
+    },
+    {
+      "id": "step2",
+      "type": "backend",
+      "label": "Approval diperlukan",
+      "sublabel": "Tahap 2 · direncanakan",
+      "explanation": "Policy memerlukan approval. Harness membandingkan dengan batas otomatis IDR 5.000.000 dan menyimpan approval pending."
+    },
+    {
+      "id": "step3",
+      "type": "security",
+      "label": "Keputusan approver",
+      "sublabel": "Tahap 3 · direncanakan",
+      "explanation": "Approver memberi keputusan. Validasi role, versi, scope, expiry dan alasan; tolak akses tanpa hak."
+    },
+    {
+      "id": "step4",
+      "type": "messagebus",
+      "label": "Pemeriksaan ulang",
+      "sublabel": "Tahap 4 · direncanakan",
+      "explanation": "Harness memeriksa ulang. Pastikan argumen, digest, policy dan otorisasi tetap valid; cegah replay."
+    },
+    {
+      "id": "step5",
+      "type": "database",
+      "label": "Hasil",
+      "sublabel": "Tahap 5 · direncanakan",
+      "explanation": "Hasil. Jika sah dan disetujui, jalankan tool simulasi secara idempoten; jika ditolak, jangan jalankan tool."
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge1",
+      "from": "step1",
+      "to": "step2"
+    },
+    {
+      "id": "edge2",
+      "from": "step2",
+      "to": "step3"
+    },
+    {
+      "id": "edge3",
+      "from": "step3",
+      "to": "step4"
+    },
+    {
+      "id": "edge4",
+      "from": "step4",
+      "to": "step5"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Rincian alur",
+      "items": [
+        "Invoice diajukan: Operator mengajukan invoice sintetis IDR 8.500.000 melalui Backend.",
+        "Policy memerlukan approval: Harness membandingkan dengan batas otomatis IDR 5.000.000 dan menyimpan approval pending.",
+        "Approver memberi keputusan: Validasi role, versi, scope, expiry dan alasan; tolak akses tanpa hak.",
+        "Harness memeriksa ulang: Pastikan argumen, digest, policy dan otorisasi tetap valid; cegah replay.",
+        "Hasil: Jika sah dan disetujui, jalankan tool simulasi secara idempoten; jika ditolak, jangan jalankan tool."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Batas",
+      "items": [
+        "Aturan separation of duties berlaku ketika dikonfigurasi; contoh ini menggunakan data sintetis.",
+        "Semua komponen dan perilaku merupakan rencana, belum diverifikasi sebagai implementasi."
+      ]
+    }
+  ]
+}
