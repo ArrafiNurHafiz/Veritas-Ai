@@ -8,6 +8,7 @@ These documents describe the **planned MVP** and the implemented P0 slice. They 
 4. [Implementation plan](04_Implementation_Plan.md) — milestones, tests and delivery.
 5. [Security and threat model](05_Security_Threat_Model.md) — assets, threats and controls.
 6. [TODO implementasi](TODO.md) — checklist prioritas, dependensi dan kriteria selesai untuk demo dan target lanjutan.
+7. [Submission pack](submission.md) — draft deliverables, judge walkthrough, evidence map and claim guardrails (rules not yet confirmed).
 
 ## Katalog dan panduan
 
