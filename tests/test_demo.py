@@ -138,7 +138,8 @@ ui = TestClient(harness.app, follow_redirects=False)
 check("UI login page renders", ui.get("/ui").status_code == 200 and "Masuk demo" in ui.get("/ui").text)
 check("UI rejects unknown token", ui.post("/ui/login", data={"token": "nope"}).status_code == 401)
 login = ui.post("/ui/login", data={"token": "tok-operator"})
-check("UI login sets session", login.status_code == 303 and ui.cookies.get("vt_session") == "tok-operator")
+check("UI login sets session", login.status_code == 303 and ui.cookies.get("vt_session")
+      and ui.cookies.get("vt_session") != "tok-operator")
 csrf = ui.cookies.get("vt_csrf")
 check("UI sets CSRF cookie", bool(csrf))
 dash = ui.get("/ui/dashboard")
@@ -172,6 +173,30 @@ check("expired execution terminal", late_view["status"] == "EXPIRED")
 check("expired zero tool calls", late_view["tool_calls"] == 0)
 check("expired approval not listed", all(a["id"] != late_approval for a in
       client.get("/api/v1/approvals", headers=APPROVER).json()["approvals"]))
+
+# ------------------------------------------------------------------ read models for the frontend
+
+listed = client.get("/api/v1/executions", headers=AUDITOR, params={"limit": 10})
+check("execution list returns scoped items",
+      listed.status_code == 200 and listed.json()["total"] >= 5 and len(listed.json()["executions"]) <= 10)
+check("execution list carries timestamps", "created_at" in listed.json()["executions"][0])
+denied_only = client.get("/api/v1/executions", headers=AUDITOR, params={"status": "DENIED"}).json()
+check("execution list filters status",
+      denied_only["total"] >= 1 and all(item["status"] == "DENIED" for item in denied_only["executions"]))
+check("execution list requires authentication",
+      client.get("/api/v1/executions", headers={"Authorization": "Bearer nope"}).status_code == 401)
+summary = client.get("/api/v1/dashboard/summary", headers=AUDITOR).json()
+check("summary totals match list", summary["executions"]["total"] == listed.json()["total"])
+check("summary reports pending approvals", summary["approvals_pending"] >= 1)
+check("summary exposes anchor states", {"pending", "confirmed"} <= set(summary["anchors"]) or summary["anchors"])
+policy = client.get("/api/v1/policies", headers=AUDITOR).json()
+check("policy endpoint publishes limits",
+      policy["policy_version"] == harness.POLICY_VERSION and policy["source"]["auto_approve_limit_idr"] == 5_000_000)
+agents = client.get("/api/v1/agents", headers=AUDITOR).json()["agents"]
+check("agent endpoint lists the procurement agent",
+      len(agents) == 1 and agents[0]["allowed_tools"] == ["approve_invoice"])
+pending_api = client.get("/api/v1/approvals", headers=APPROVER).json()["approvals"]
+check("approval list includes proposal", pending_api and "proposal" in pending_api[0]["execution"])
 
 # ------------------------------------------------------------------ planner trust boundary
 
@@ -280,7 +305,8 @@ preflight = api.options("/api/v1/tasks", headers={"Origin": "http://localhost:30
 check("CORS preflight allows frontend origin", preflight.headers.get("access-control-allow-origin") == "http://localhost:3000")
 check("API login rejects unknown token", api.post("/api/v1/auth/login", json={"token": "nope"}).status_code == 401)
 login_response = api.post("/api/v1/auth/login", json={"token": "tok-admin"})
-check("API login sets session cookie", login_response.status_code == 200 and api.cookies.get("vt_session") == "tok-admin")
+check("API login sets session cookie", login_response.status_code == 200 and api.cookies.get("vt_session")
+      and api.cookies.get("vt_session") != "tok-admin")
 api_csrf = login_response.json()["csrf_token"]
 check("API me returns identity", api.get("/api/v1/me").json()["role"] == "admin")
 no_csrf = api.post("/api/v1/egress/send", headers={"Idempotency-Key": "api-csrf-1"},
@@ -289,6 +315,44 @@ check("cookie mutation without CSRF denied", no_csrf.status_code == 403 and no_c
 with_csrf = api.post("/api/v1/egress/send", headers={"Idempotency-Key": "api-csrf-1", "X-CSRF-Token": api_csrf},
                      json={"destination": "mock://crm", "payload": {"name": "Nexora"}})
 check("cookie mutation with CSRF allowed", with_csrf.status_code == 202 and with_csrf.json()["decision"] == "ALLOW")
+
+# ------------------------------------------------------------------ email login and server-side sessions
+
+sess = TestClient(harness.app, follow_redirects=False)
+email_login = sess.post("/api/v1/auth/login",
+                        json={"email": "marcus.vance@nexora.internal", "password": "demo123456"})
+check("email login accepted", email_login.status_code == 200 and email_login.json()["role"] == "operator")
+opaque = sess.cookies.get("vt_session")
+check("email session token is opaque", bool(opaque) and opaque != "tok-operator")
+stored = harness.one("SELECT * FROM sessions WHERE user='marcus.vance' ORDER BY created_at DESC LIMIT 1")
+check("session token stored hashed", stored is not None and stored["token_hash"] == harness.sha(opaque))
+me = sess.get("/api/v1/me").json()
+check("email session resolves /me", me["user"] == "marcus.vance" and me["email"] == "marcus.vance@nexora.internal")
+wrong = TestClient(harness.app).post("/api/v1/auth/login",
+                                     json={"email": "marcus.vance@nexora.internal", "password": "nope"})
+check("wrong password rejected", wrong.status_code == 401)
+
+harness.run("UPDATE sessions SET expires_at='2000-01-01T00:00:00Z' WHERE token_hash=?", (harness.sha(opaque),))
+check("expired session rejected", sess.get("/api/v1/me").status_code == 401)
+
+sess2 = TestClient(harness.app, follow_redirects=False)
+second = sess2.post("/api/v1/auth/login",
+                    json={"email": "sarah.jenkins@nexora.internal", "password": "demo123456"})
+check("logout requires CSRF for cookie sessions",
+      sess2.post("/api/v1/auth/logout").status_code == 403)
+check("session logout succeeds", sess2.post("/api/v1/auth/logout",
+      headers={"X-CSRF-Token": second.json()["csrf_token"]}).status_code == 200)
+check("revoked session rejected", sess2.get("/api/v1/me").status_code == 401)
+
+legacy = TestClient(harness.app).get("/api/v1/me", headers={"Cookie": "vt_session=tok-admin"})
+check("static token cookie no longer authenticates", legacy.status_code == 401)
+
+throttle = TestClient(harness.app)
+for _ in range(harness.LOGIN_MAX_FAILURES):
+    throttle.post("/api/v1/auth/login", json={"email": "rate.limit@nexora.internal", "password": "nope"})
+check("login rate limited", throttle.post("/api/v1/auth/login",
+      json={"email": "rate.limit@nexora.internal", "password": "nope"}).status_code == 429)
+harness.LOGIN_FAILURES.clear()
 
 pending_anchor = harness.one("SELECT id FROM anchors WHERE status='pending' LIMIT 1")
 check("anchor confirm rejects non-admin",
@@ -320,6 +384,13 @@ check("cross-org approval filtered from list", all(a["id"] != other_pending["app
 cross_decide = client.post(f"/api/v1/approvals/{other_pending['approval_id']}/decisions", headers=APPROVER,
                            json={"decision": "approve", "reason": "should not work", "expected_version": 1})
 check("cross-org approval cannot be decided", cross_decide.status_code == 404)
+
+shared = client.post("/api/v1/tasks", headers={**OP, "Idempotency-Key": "shared-idem"},
+                     json={"payload": {"invoice_id": "INV-SHARED", "amount_idr": 2_000_000, "vendor": "ABC"}})
+shared_replay = client.post("/api/v1/tasks", headers={**OTHER, "Idempotency-Key": "shared-idem"},
+                            json={"payload": {"invoice_id": "INV-SHARED", "amount_idr": 2_000_000, "vendor": "ABC"}})
+check("cross-org idempotency key does not leak a view",
+      shared.status_code == 202 and shared_replay.status_code == 404)
 harness.TOKENS.pop("tok-other")
 
 # ------------------------------------------------------------------ EVM anchor adapter (fake JSON-RPC node)
