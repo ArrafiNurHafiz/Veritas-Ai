@@ -17,6 +17,7 @@ is deployed.
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python tests/test_demo.py          # 117 acceptance checks, no framework
+.venv/bin/python tests/test_e2e.py           # 28 checks against a real uvicorn process
 .venv/bin/python tests/test_seed.py          # 9 seed checks
 .venv/bin/python tests/test_openapi.py       # contract snapshot (use --write after an intended API change)
 .venv/bin/python seed_demo.py                # Nexora demo dataset (idempotent)
