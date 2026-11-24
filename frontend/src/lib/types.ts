@@ -21,6 +21,7 @@ export type ExecutionStatus =
   | 'SUCCEEDED'
   | 'REJECTED'
   | 'DENIED'
+  | 'EXPIRED'
   | 'FAILED';
 
 export type AnchorStatus = 'NOT_REQUESTED' | 'PENDING' | 'CONFIRMED' | 'FAILED';
@@ -79,7 +80,7 @@ export interface ExecutionReceipt {
   receiptDigest: string;
   anchor: {
     chainId: string;
-    blockNumber: number;
+    blockNumber?: number;
     txHash: string;
     status: AnchorStatus;
     confirmedAt?: string;
@@ -104,11 +105,11 @@ export interface ExecutionRecord {
   policyResult?: {
     decision: 'ALLOWED' | 'APPROVAL_REQUIRED' | 'DENIED';
     reason: string;
-    thresholdIdr: number;
+    thresholdIdr?: number;
   };
   approval?: {
     id: string;
-    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
     decidedBy?: string;
     decidedRole?: UserRole;
     reason?: string;
