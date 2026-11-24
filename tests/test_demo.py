@@ -128,6 +128,33 @@ retry = client.post("/api/v1/egress/send", headers={**OP, "Idempotency-Key": "eg
                     json={"destination": "mock://ledger", "payload": {"name": "Nexora", "amount_idr": 8500000}})
 check("AC-09 retry does not duplicate delivery", retry.json()["replayed"] and anchor_count() == 1)
 
+# ------------------------------------------------------------------ receiver outage and retry
+
+injected = client.post("/internal/mock/receiver/failures", headers=INTERNAL, json={"remaining": 1})
+check("receiver failure injected", injected.status_code == 200 and injected.json()["remaining"] == 1)
+before = anchor_count()
+outage = client.post("/api/v1/egress/send", headers={**OP, "Idempotency-Key": "egress-outage"},
+                     json={"destination": "mock://crm", "payload": {"name": "Nexora"}}).json()
+check("receiver outage keeps the policy verdict", outage["decision"] == "ALLOW")
+check("receiver outage marks delivery failed",
+      not outage["delivered"] and outage["delivery_status"] == "FAILED"
+      and outage["last_error"] == "RECEIVER_UNAVAILABLE" and outage["delivery_attempts"] == 1)
+check("receiver outage delivers nothing", anchor_count() == before)
+recovered = client.post("/api/v1/egress/send", headers={**OP, "Idempotency-Key": "egress-outage"},
+                        json={"destination": "mock://crm", "payload": {"name": "Nexora"}}).json()
+check("replay retries a failed delivery",
+      recovered["replayed"] and recovered["delivered"] and recovered["delivery_status"] == "DELIVERED"
+      and recovered["delivery_attempts"] == 2)
+check("retry delivered exactly once", anchor_count() == before + 1)
+settled = client.post("/api/v1/egress/send", headers={**OP, "Idempotency-Key": "egress-outage"},
+                      json={"destination": "mock://crm", "payload": {"name": "Nexora"}}).json()
+check("settled replay does not redeliver",
+      settled["delivered"] and settled["mock_calls"] == 0 and anchor_count() == before + 1)
+denied = client.post("/api/v1/egress/send", headers={**OP, "Idempotency-Key": "egress-offlist-replay"},
+                     json={"destination": "https://evil.example", "payload": {"name": "Nexora"}}).json()
+check("denied delivery is marked skipped",
+      denied["delivery_status"] == "SKIPPED" and denied["delivery_attempts"] == 0)
+
 # events chain is append-only
 events = client.get(f"/api/v1/executions/{r.json()['execution_id']}/events", headers=AUDITOR).json()["events"]
 check("event chain linked", all(events[i]["prev_hash"] == events[i - 1]["hash"] for i in range(1, len(events))))
