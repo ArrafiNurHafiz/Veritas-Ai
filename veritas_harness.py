@@ -31,6 +31,7 @@ from fastapi import Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from pydantic import BaseModel
 
 from anchor_chain import AnchorError, enabled as chain_enabled, read_digest, submit_digest
 from llm_planner import propose
@@ -495,18 +496,24 @@ def set_session_cookies(response, token: str, csrf: str) -> None:
     response.set_cookie("vt_csrf", csrf, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
 
 
+class LoginRequest(BaseModel):
+    email: str | None = None
+    password: str | None = None
+    token: str | None = None
+
+
 @app.post("/api/v1/auth/login")
-def api_login(body: dict):
-    email = body.get("email")
-    email = email.strip().lower() if isinstance(email, str) else ""
-    token = body.get("token")
+def api_login(body: LoginRequest):
+    email = body.email or ""
+    email = email.strip().lower()
+    token = body.token
     key = _login_key(email) if email else _login_key(f"token:{token}")
     if login_blocked(key):
         raise ApiError(429, "RATE_LIMITED", "Too many failed attempts; retry later.")
     identity, session_email = None, None
     if email:
         account = ACCOUNTS.get(email)
-        password = body.get("password")
+        password = body.password
         if account and isinstance(password, str) and hmac.compare_digest(password, account["password"]):
             identity = {"user": account["user"], "role": account["role"],
                         "org": account["org"], "project": account["project"]}
