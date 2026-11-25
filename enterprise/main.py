@@ -85,6 +85,10 @@ class UserRoleUpdateRequest(BaseModel):
     status: str | None = Field(default=None, pattern="^(active|disabled)$")
 
 
+class ToolToggleRequest(BaseModel):
+    enabled: bool
+
+
 def _is_production() -> bool:
     return os.environ.get("VERITAS_ENV", "").strip().lower() == "production"
 
@@ -1005,18 +1009,59 @@ def agents_list(
     with session_scope() as session:
         policy = active_policy(session, identity.tenant_id)
         runs = len(repo.list_executions(session, tenant_id=identity.tenant_id, limit=1000))
+        enabled_tools = [
+            t.tool_name
+            for t in repo.list_tools(session, tenant_id=identity.tenant_id, enabled_only=True)
+        ]
         return {
             "agents": [
                 {
                     "agent_id": "procurement-agent",
                     "name": "Procurement Agent",
                     "status": "OPERATIONAL",
-                    "allowed_tools": ["approve_invoice"],
+                    "allowed_tools": enabled_tools,
                     "policy_version": policy.version,
                     "executions": runs,
                 }
             ]
         }
+
+
+@app.get("/api/v1/tools")
+def tools_list(
+    identity: Identity = Depends(require_role("operator", "approver", "admin", "auditor")),
+) -> dict[str, Any]:
+    with session_scope() as session:
+        rows = repo.list_tools(session, tenant_id=identity.tenant_id)
+        return {"tools": [_row_dict(row) for row in rows]}
+
+
+@app.patch("/api/v1/tools/{tool_name}")
+def tools_toggle(
+    tool_name: str,
+    body: ToolToggleRequest,
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    with session_scope() as session:
+        try:
+            updated = repo.set_tool_enabled(
+                session,
+                tenant_id=identity.tenant_id,
+                tool_name=tool_name,
+                enabled=body.enabled,
+            )
+        except repo.NotFound as exc:
+            raise _not_found("tool") from exc
+        repo.create_audit_event(
+            session,
+            tenant_id=identity.tenant_id,
+            actor=identity.user_id,
+            action="tool.toggled",
+            target_type="tool",
+            target_id=updated.id,
+            payload={"tool_name": updated.tool_name, "enabled": updated.enabled},
+        )
+        return _row_dict(updated)
 
 
 @app.post("/api/v1/verify")

@@ -802,6 +802,17 @@ def list_tools(
     return list(session.scalars(stmt.order_by(ToolRegistryEntry.tool_name).limit(_limit(limit))))
 
 
+def set_tool_enabled(
+    session: Session, *, tenant_id: str, tool_name: str, enabled: bool
+) -> ToolRegistryEntry:
+    row = get_tool(session, tenant_id=_require_tenant(tenant_id), tool_name=tool_name)
+    if row is None:
+        raise NotFound(f"tool {tool_name} not found")
+    row.enabled = bool(enabled)
+    session.flush()
+    return row
+
+
 def create_egress_delivery(
     session: Session,
     *,
