@@ -11,6 +11,22 @@ import {
 } from './types';
 import { canonicalizeJson } from './canonical';
 
+/**
+ * Build-time mode switch. Demo remains the default; enterprise is opt-in.
+ * NEXT_PUBLIC_* values are inlined into the client bundle and carry no secrets.
+ */
+export const VERITAS_MODE =
+  (process.env.NEXT_PUBLIC_VERITAS_MODE || '').trim().toLowerCase() === 'enterprise'
+    ? 'enterprise'
+    : 'demo';
+export const IS_ENTERPRISE = VERITAS_MODE === 'enterprise';
+export const VERITAS_TEST_MODE = process.env.NEXT_PUBLIC_VERITAS_TEST_MODE === '1';
+export const ENTERPRISE_AUTH_PATH = VERITAS_TEST_MODE
+  ? '/api/v1/auth/test-login'
+  : '/api/v1/auth/start';
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -25,10 +41,13 @@ export class ApiError extends Error {
 }
 
 interface MeResponse {
-  user: string;
-  role: UserRole;
-  organization_id: string;
-  project_id: string;
+  user?: string;
+  user_id?: string;
+  role?: UserRole;
+  roles?: UserRole[];
+  organization_id?: string;
+  tenant_id?: string;
+  project_id?: string;
   email?: string;
 }
 
@@ -72,11 +91,12 @@ interface ReceiptView {
 }
 
 interface PolicyView {
-  policy_version: number;
+  policy_version?: number;
+  version?: number;
   digest: string;
-  source: { auto_approve_limit_idr: number; hard_cap_idr: number; vendors: string[] };
-  approval_ttl_seconds: number;
-  tool: { name: string; simulated: boolean };
+  source: { auto_approve_limit_idr: number; hard_cap_idr?: number; vendors: string[] };
+  approval_ttl_seconds?: number;
+  tool?: { name: string; simulated?: boolean };
 }
 
 interface AgentView {
@@ -104,6 +124,47 @@ function csrfToken(): string {
   return match ? decodeURIComponent(match.slice('vt_csrf='.length)) : '';
 }
 
+function parseJson<T>(value: unknown, fallback: T): T {
+  if (typeof value !== 'string') return (value as T) ?? fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+// The enterprise backend returns ORM rows (id/payload_json/data_json) while
+// the demo API returns already-shaped views. Normalize here so the UI consumes
+// one representation without fabricating any data.
+function normalizeExecutionView(row: ExecutionView): ExecutionView {
+  const raw = row as unknown as Record<string, unknown>;
+  return {
+    ...row,
+    execution_id: (raw.execution_id as string) || (raw.id as string) || '',
+    organization_id: (raw.organization_id as string) || (raw.tenant_id as string) || '',
+    payload: parseJson(raw.payload_json, parseJson(raw.payload, {})),
+    proposal: parseJson(raw.proposal_json, parseJson(raw.proposal, null)),
+    decision: (raw.decision as string | null) ?? null,
+    reason_code: (raw.reason_code as string | null) ?? null,
+    tool_calls: Number(raw.tool_calls ?? 0),
+    actor: (raw.actor as string | null) ?? null,
+    created_at: (raw.created_at as string) || '',
+    updated_at: (raw.updated_at as string) || '',
+  };
+}
+
+function normalizeEventView(row: EventView): EventView {
+  const raw = row as unknown as Record<string, unknown>;
+  return {
+    seq: Number(raw.seq ?? 0),
+    type: (raw.type as string) || '',
+    data: parseJson(raw.data_json, parseJson(raw.data, {})),
+    prev_hash: (raw.prev_hash as string) || '',
+    hash: (raw.hash as string) || '',
+    created_at: (raw.created_at as string) || '',
+  };
+}
+
 export const ROLE_TOKENS: Record<string, string> = {
   operator: 'tok-operator',
   approver: 'tok-approver',
@@ -112,6 +173,10 @@ export const ROLE_TOKENS: Record<string, string> = {
 };
 
 export function setAuthToken(token: string) {
+  if (IS_ENTERPRISE) {
+    // Enterprise uses the server-side session cookie; never persist a bearer token.
+    return;
+  }
   if (typeof window !== 'undefined') {
     localStorage.setItem('veritas_token', token);
   }
@@ -134,12 +199,26 @@ function defaultAuthHeader(): string {
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const isUnsafe = !SAFE_METHODS.has((init.method || 'GET').toUpperCase());
   const csrf = csrfToken();
-  if (csrf) headers.set('X-CSRF-Token', csrf);
-  if (!headers.has('Authorization')) {
-    const auth = defaultAuthHeader();
-    if (auth) headers.set('Authorization', auth);
+
+  if (IS_ENTERPRISE) {
+    // Session cookie only: strip any caller-supplied bearer token so a demo
+    // persona can never reach the production backend, even by accident.
+    headers.delete('Authorization');
+    // Double-submit CSRF is required for every state-changing request.
+    if (isUnsafe) {
+      if (csrf) headers.set('X-CSRF-Token', csrf);
+      else console.warn(`[veritas] vt_csrf cookie missing for ${init.method || 'GET'} ${path}`);
+    }
+  } else {
+    if (csrf) headers.set('X-CSRF-Token', csrf);
+    if (!headers.has('Authorization')) {
+      const auth = defaultAuthHeader();
+      if (auth) headers.set('Authorization', auth);
+    }
   }
+
   const response = await fetch(path, { ...init, headers, credentials: 'include' });
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -169,8 +248,24 @@ export function getMe() {
   return request<MeResponse>('/api/v1/me');
 }
 
-export function getExecutions(limit = 100) {
-  return request<{ executions: ExecutionView[]; total: number }>(`/api/v1/executions?limit=${limit}`);
+export async function getExecutions(limit = 100) {
+  const data = await request<{ executions: ExecutionView[]; total: number }>(
+    `/api/v1/executions?limit=${limit}`
+  );
+  return IS_ENTERPRISE
+    ? { ...data, executions: data.executions.map(normalizeExecutionView) }
+    : data;
+}
+
+// The enterprise backend returns events embedded in the execution detail,
+// rather than exposing the demo-only /events subresource.
+export async function getExecution(executionId: string) {
+  const data = await request<ExecutionView & { events: EventView[] }>(
+    `/api/v1/executions/${executionId}`
+  );
+  return IS_ENTERPRISE
+    ? { ...normalizeExecutionView(data), events: (data.events || []).map(normalizeEventView) }
+    : data;
 }
 
 export function getEvents(executionId: string) {
@@ -189,19 +284,23 @@ export function getAgents() {
   return request<{ agents: AgentView[] }>('/api/v1/agents');
 }
 
-export function createTask(payload: Record<string, unknown>, idempotencyKey: string) {
-  return request<ExecutionView>('/api/v1/tasks', {
+export async function createTask(payload: Record<string, unknown>, idempotencyKey: string) {
+  const data = await request<ExecutionView>('/api/v1/tasks', {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify({ task_type: 'invoice_review', payload }),
   });
+  return IS_ENTERPRISE ? normalizeExecutionView(data) : data;
 }
 
-export function decide(approvalId: string, decision: 'approve' | 'reject', reason: string) {
-  return request<{ approval_id: string; status: string; execution: ExecutionView }>(
+export async function decide(approvalId: string, decision: 'approve' | 'reject', reason: string) {
+  const data = await request<{ approval_id: string; status: string; execution: ExecutionView }>(
     `/api/v1/approvals/${approvalId}/decisions`,
     { method: 'POST', body: JSON.stringify({ decision, reason }) },
   );
+  return IS_ENTERPRISE
+    ? { ...data, execution: normalizeExecutionView(data.execution) }
+    : data;
 }
 
 export function verifySupplied(body: Record<string, unknown>) {
@@ -282,16 +381,18 @@ function personName(local: string): string {
 }
 
 export function mapUser(me: MeResponse): User {
-  const email = me.email || `${me.user}@nexora.internal`;
+  const userId = me.user || me.user_id || '';
+  const role = me.role || (Array.isArray(me.roles) ? me.roles[0] : undefined) || 'auditor';
+  const email = me.email || `${userId}@idp.local`;
   const local = email.split('@')[0];
-  const name = personName(me.user || local);
+  const name = personName(userId || local);
   return {
-    id: me.user,
+    id: userId,
     name,
-    email,
-    role: me.role,
-    organizationId: me.organization_id,
-    organizationName: 'Nexora Technologies',
+    email: me.email || (IS_ENTERPRISE ? '' : `${userId}@nexora.internal`),
+    role,
+    organizationId: me.organization_id || me.tenant_id || '',
+    organizationName: me.organization_id || (IS_ENTERPRISE ? me.tenant_id || '' : 'Nexora Technologies'),
     avatar: name
       .split(' ')
       .map((part) => part.charAt(0))
@@ -304,11 +405,11 @@ export function mapUser(me: MeResponse): User {
 export function mapPolicy(policy: PolicyView): PolicyRule {
   return {
     id: 'harness-policy',
-    version: policy.policy_version,
+    version: policy.policy_version ?? policy.version ?? 1,
     name: 'Harness Server Policy (enforced)',
     maxAutoAmountIdr: policy.source.auto_approve_limit_idr,
     allowedVendors: policy.source.vendors,
-    restrictedTools: [policy.tool.name],
+    restrictedTools: policy.tool ? [policy.tool.name] : [],
     requiredApproverRoles: ['approver', 'admin'],
     defaultAction: 'DENY',
     updatedAt: new Date().toISOString(),
@@ -455,6 +556,17 @@ export function mapExecution(
 }
 
 export async function hydrateExecution(view: ExecutionView): Promise<ExecutionRecord> {
+  if (IS_ENTERPRISE) {
+    // Enterprise keeps events on the execution detail; never fall back to
+    // demo fixtures when that read fails.
+    const [detail, receipt] = await Promise.all([
+      getExecution(view.execution_id),
+      view.receipt_id
+        ? getReceipt(view.receipt_id).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    return mapExecution(view, detail.events || [], receipt);
+  }
   const [events, receipt] = await Promise.all([
     getEvents(view.execution_id),
     view.receipt_id

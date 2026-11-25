@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useApp } from '@/lib/store';
+import { IS_ENTERPRISE } from '@/lib/api';
 import { UserRole } from '@/lib/types';
 import { 
   Building2, 
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export default function DashboardHeader() {
-  const { currentUser, setUserRole, executions, resetToDefault } = useApp();
+  const { currentUser, setUserRole, executions, resetToDefault, syncError } = useApp();
 
   const pendingApprovalsCount = executions.filter(
     (e) => e.status === 'WAITING_APPROVAL' && e.approval?.status === 'PENDING'
@@ -28,29 +29,44 @@ export default function DashboardHeader() {
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-[#ececec]">
-      {/* Demo Sandbox Top Banner */}
-      <div className="bg-[#fafafb] border-b border-[#ececec] px-6 py-1.5 flex items-center justify-between text-[12px] text-[#777b86]">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span className="font-medium text-[#17191c]">Tenant: Nexora Technologies</span>
+      {IS_ENTERPRISE ? (
+        <div className="bg-[#fafafb] border-b border-[#ececec] px-6 py-1.5 flex items-center gap-2 text-[12px] text-[#777b86]">
+          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span className="font-medium text-[#17191c]">Enterprise session</span>
           <span className="text-[#979799]">|</span>
-          <span>Enterprise AI Governance Sandbox (No real funds or tokens)</span>
+          <span>Roles and tenant come from your identity provider</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-[#777b86] flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#17191c]"></span>
-            Local mock anchor [Active]
-          </span>
-          <button
-            onClick={() => void resetToDefault()}
-            title="Reset demo data to initial state"
-            className="hover:text-[#17191c] flex items-center gap-1 text-[11px] underline underline-offset-2"
-          >
-            <RotateCcw className="w-3 h-3" />
-            Reset Demo State
-          </button>
+      ) : (
+        /* Demo Sandbox Top Banner */
+        <div className="bg-[#fafafb] border-b border-[#ececec] px-6 py-1.5 flex items-center justify-between text-[12px] text-[#777b86]">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="font-medium text-[#17191c]">Tenant: Nexora Technologies</span>
+            <span className="text-[#979799]">|</span>
+            <span>Enterprise AI Governance Sandbox (No real funds or tokens)</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-[#777b86] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#17191c]"></span>
+              Local mock anchor [Active]
+            </span>
+            <button
+              onClick={() => void resetToDefault()}
+              title="Reset demo data to initial state"
+              className="hover:text-[#17191c] flex items-center gap-1 text-[11px] underline underline-offset-2"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Reset Demo State
+            </button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {IS_ENTERPRISE && syncError && (
+        <div role="alert" className="border-b border-rose-200 bg-rose-50 px-6 py-2 text-[12px] text-rose-800">
+          Backend sync problem: {syncError}. Demo data will not be shown.
+        </div>
+      )}
 
       {/* Main App Header */}
       <div className="px-6 h-16 flex items-center justify-between">
@@ -88,7 +104,8 @@ export default function DashboardHeader() {
             )}
           </Link>
 
-          {/* Quick Role Switcher Pill */}
+          {/* Role comes from the IdP in enterprise: no demo switcher or token pill. */}
+          {!IS_ENTERPRISE && (
           <div className="relative group">
             <button className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-[#17191c] hover:bg-[#f2f2f3] transition-colors text-[13px]">
               <span className="w-2 h-2 rounded-full bg-[#17191c]"></span>
@@ -136,6 +153,7 @@ export default function DashboardHeader() {
               </div>
             </div>
           </div>
+          )}
 
           {/* User Avatar */}
           <div className="w-8 h-8 rounded-full bg-[#17191c] text-white flex items-center justify-center font-medium text-[12px]">

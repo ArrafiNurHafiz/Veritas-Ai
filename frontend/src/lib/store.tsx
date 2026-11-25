@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { User, AgentInfo, PolicyRule, ExecutionRecord, UserRole, ExecutionStatus, ExecutionEvent } from './types';
 import { DEMO_USERS, INITIAL_AGENTS, INITIAL_POLICY, INITIAL_EXECUTIONS } from './mockData';
 import { canonicalizeJson, computeSha256 } from './crypto';
@@ -14,6 +14,7 @@ interface AppContextType {
   policy: PolicyRule;
   updatePolicy: (updated: Partial<PolicyRule>) => Promise<void>;
   executions: ExecutionRecord[];
+  syncError: string | null;
   refreshExecutions: () => Promise<void>;
   submitTask: (data: {
     agentId: string;
@@ -42,56 +43,142 @@ function readStored<T>(key: string, fallback: T): T {
   }
 }
 
+// Neutral placeholders for enterprise: identity, role and policy data must
+// come from the session/backend, never from the demo fixtures below.
+const ENTERPRISE_USER: User = {
+  id: '',
+  name: 'Session user',
+  email: '',
+  role: 'auditor',
+  organizationId: '',
+  organizationName: '',
+  avatar: 'SU',
+};
+
+const ENTERPRISE_POLICY: PolicyRule = {
+  ...INITIAL_POLICY,
+  version: 0,
+  maxAutoAmountIdr: 0,
+  allowedVendors: [],
+  restrictedTools: [],
+  policyDigest: '',
+  updatedAt: '',
+};
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User>(() => readStored('veritas_user', DEMO_USERS[0]));
-  const [agents, setAgents] = useState<AgentInfo[]>(INITIAL_AGENTS);
-  const [policy, setPolicy] = useState<PolicyRule>(() => readStored('veritas_policy', INITIAL_POLICY));
+  const [currentUser, setCurrentUser] = useState<User>(() =>
+    api.IS_ENTERPRISE ? ENTERPRISE_USER : readStored('veritas_user', DEMO_USERS[0]));
+  const [agents, setAgents] = useState<AgentInfo[]>(api.IS_ENTERPRISE ? [] : INITIAL_AGENTS);
+  const [policy, setPolicy] = useState<PolicyRule>(() =>
+    api.IS_ENTERPRISE ? ENTERPRISE_POLICY : readStored('veritas_policy', INITIAL_POLICY));
   const [executions, setExecutions] = useState<ExecutionRecord[]>(
-    () => readStored('veritas_executions', INITIAL_EXECUTIONS),
+    () => api.IS_ENTERPRISE ? [] : readStored('veritas_executions', INITIAL_EXECUTIONS),
   );
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Load from localStorage & sync live state from local backend
-  useEffect(() => {
-    let isMounted = true;
-    async function initAndSync() {
-      // Live sync from local Harness API (/api/v1)
-      try {
-        const [policyRes, execsRes] = await Promise.all([
-          api.getPolicy().catch(() => null),
-          api.getExecutions(50).catch(() => null),
-        ]);
-        if (!isMounted) return;
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
-        if (policyRes) {
-          setPolicy(api.mapPolicy(policyRes));
-        }
-
-        if (execsRes && Array.isArray(execsRes.executions) && execsRes.executions.length > 0) {
-          const hydrated = await Promise.all(
-            execsRes.executions.map((e) => api.hydrateExecution(e).catch(() => null))
-          );
-          const valid = hydrated.filter((e): e is ExecutionRecord => e !== null);
-          if (valid.length > 0 && isMounted) {
-            setExecutions(valid);
-          }
-          const agentsRes = await api.getAgents().catch(() => null);
-          if (agentsRes && isMounted) {
-            setAgents(api.mapAgents(agentsRes.agents, valid));
-          }
-        }
-      } catch {
-        // Local backend not reachable, keep local state
-      }
-    }
-
-    initAndSync();
-    return () => {
-      isMounted = false;
-    };
+  const reportEnterpriseError = useCallback((scope: string, err: unknown) => {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[veritas] enterprise ${scope} failed: ${detail}. No demo fallback will be used.`, err);
+    if (mountedRef.current) setSyncError(`${scope}: ${detail}`);
   }, []);
 
-  // Save changes to localStorage
+  // Shared by first mount and manual refresh. Demo behaviour is unchanged.
+  const loadFromBackend = useCallback(async () => {
+    if (api.IS_ENTERPRISE) {
+      let failed = false;
+      const fail = (scope: string, err: unknown) => {
+        failed = true;
+        reportEnterpriseError(scope, err);
+      };
+      try {
+        const [meRes, policyRes, execsRes] = await Promise.allSettled([
+          api.getMe(),
+          api.getPolicy(),
+          api.getExecutions(50),
+        ]);
+
+        // Identity is authoritative in the backend session. Some enterprise
+        // deployments do not expose /me, so this is advisory only.
+        if (meRes.status === 'fulfilled') {
+          if (mountedRef.current) setCurrentUser(api.mapUser(meRes.value));
+        } else {
+          console.warn('[veritas] identity endpoint unavailable; backend session remains authoritative.', meRes.reason);
+        }
+
+        if (policyRes.status === 'fulfilled') {
+          if (mountedRef.current) setPolicy(api.mapPolicy(policyRes.value));
+        } else {
+          fail('policy load', policyRes.reason);
+        }
+
+        if (execsRes.status === 'fulfilled') {
+          const records = await Promise.all(
+            execsRes.value.executions.map(async (view) => {
+              try {
+                return await api.hydrateExecution(view);
+              } catch (err) {
+                fail('execution detail', err);
+                return null;
+              }
+            }),
+          );
+          if (mountedRef.current) {
+            const valid = records.filter((record): record is ExecutionRecord => record !== null);
+            setExecutions(valid);
+            // No demo agent fixtures in enterprise; the backend owns agents.
+            setAgents(api.mapAgents([], valid));
+          }
+        } else {
+          fail('execution load', execsRes.reason);
+        }
+        if (mountedRef.current && !failed) setSyncError(null);
+      } catch (err) {
+        fail('backend sync', err);
+      }
+      return;
+    }
+
+    // Demo: local Harness API with the original offline fallback semantics.
+    try {
+      const [policyRes, execsRes] = await Promise.all([
+        api.getPolicy().catch(() => null),
+        api.getExecutions(50).catch(() => null),
+      ]);
+      if (!mountedRef.current) return;
+
+      if (policyRes) {
+        setPolicy(api.mapPolicy(policyRes));
+      }
+
+      if (execsRes && Array.isArray(execsRes.executions) && execsRes.executions.length > 0) {
+        const hydrated = await Promise.all(
+          execsRes.executions.map((e) => api.hydrateExecution(e).catch(() => null))
+        );
+        const valid = hydrated.filter((e): e is ExecutionRecord => e !== null);
+        if (valid.length > 0 && mountedRef.current) {
+          setExecutions(valid);
+        }
+        const agentsRes = await api.getAgents().catch(() => null);
+        if (agentsRes && mountedRef.current) {
+          setAgents(api.mapAgents(agentsRes.agents, valid));
+        }
+      }
+    } catch {
+      // Local backend not reachable, keep local state
+    }
+  }, [reportEnterpriseError]);
+
   useEffect(() => {
+    // Defer the async sync so no state is set synchronously in the effect body.
+    void Promise.resolve().then(loadFromBackend);
+  }, [loadFromBackend]);
+
+  // Demo only: persist the local sandbox view. Enterprise uses server sessions.
+  useEffect(() => {
+    if (api.IS_ENTERPRISE) return;
     try {
       localStorage.setItem('veritas_user', JSON.stringify(currentUser));
       localStorage.setItem('veritas_executions', JSON.stringify(executions));
@@ -102,41 +189,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser, executions, policy]);
 
   const refreshExecutions = async () => {
-    try {
-      const [policyRes, execsRes] = await Promise.all([
-        api.getPolicy().catch(() => null),
-        api.getExecutions(50).catch(() => null),
-      ]);
-      if (policyRes) {
-        setPolicy(api.mapPolicy(policyRes));
-      }
-      if (execsRes && Array.isArray(execsRes.executions) && execsRes.executions.length > 0) {
-        const hydrated = await Promise.all(
-          execsRes.executions.map((e) => api.hydrateExecution(e).catch(() => null))
-        );
-        const valid = hydrated.filter((e): e is ExecutionRecord => e !== null);
-        if (valid.length > 0) {
-          setExecutions(valid);
-        }
-        const agentsRes = await api.getAgents().catch(() => null);
-        if (agentsRes) {
-          setAgents(api.mapAgents(agentsRes.agents, valid));
-        }
-      }
-    } catch {
-      // Ignore background sync errors
-    }
+    await loadFromBackend();
   };
 
   const setUserRole = (role: UserRole) => {
+    if (api.IS_ENTERPRISE) {
+      console.warn('[veritas] demo role switching is disabled in enterprise mode; roles come from the IdP.');
+      return;
+    }
     const target = DEMO_USERS.find((u) => u.role === role) || {
       ...currentUser,
       role,
     };
     setCurrentUser(target);
     const token = api.ROLE_TOKENS[role] || 'tok-admin';
+    api.setAuthToken(token);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('veritas_token', token);
       localStorage.setItem('veritas_user', JSON.stringify(target));
     }
     // Refresh executions under the new role scope
@@ -144,7 +212,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updatePolicy = async (updated: Partial<PolicyRule>): Promise<void> => {
-    if (currentUser.role !== 'admin') {
+    // Roles are asserted by the backend from the IdP identity in enterprise.
+    if (!api.IS_ENTERPRISE && currentUser.role !== 'admin') {
       throw new api.ApiError(
         403,
         'FORBIDDEN',
@@ -169,6 +238,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (err instanceof api.ApiError && (err.status === 403 || err.status === 401 || err.status === 422)) {
         throw err;
       }
+      if (api.IS_ENTERPRISE) {
+        reportEnterpriseError('policy update', err);
+        throw err;
+      }
       // Backend unavailable: keep the offline demo deterministic.
     }
 
@@ -186,7 +259,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     amountIdr: number;
     description?: string;
   }): Promise<ExecutionRecord> => {
-    if (currentUser.role === 'auditor') {
+    if (!api.IS_ENTERPRISE && currentUser.role === 'auditor') {
       throw new api.ApiError(
         403,
         'FORBIDDEN',
@@ -213,6 +286,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       if (err instanceof api.ApiError && (err.status === 403 || err.status === 401)) {
+        throw err;
+      }
+      if (api.IS_ENTERPRISE) {
+        reportEnterpriseError('task submission', err);
         throw err;
       }
       // Backend not running or call failed; proceed to local deterministic fallback below
@@ -385,7 +462,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     decision: 'APPROVED' | 'REJECTED',
     reason: string
   ): Promise<void> => {
-    if (currentUser.role !== 'approver' && currentUser.role !== 'admin') {
+    if (!api.IS_ENTERPRISE && currentUser.role !== 'approver' && currentUser.role !== 'admin') {
       throw new api.ApiError(
         403,
         'FORBIDDEN',
@@ -395,6 +472,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     // Attempt dispatch to real live Harness Gateway
     const targetItem = executions.find((e) => e.id === executionId);
+    if (api.IS_ENTERPRISE && !targetItem?.approval?.id) {
+      const err = new Error(`No approval id is available for execution ${executionId}.`);
+      reportEnterpriseError('approval decision', err);
+      throw err;
+    }
     if (targetItem?.approval?.id && !targetItem.approval.id.startsWith('appr_')) {
       try {
         const decidedRes = await api.decide(
@@ -409,6 +491,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         if (err instanceof api.ApiError && (err.status === 403 || err.status === 401)) {
+          throw err;
+        }
+        if (api.IS_ENTERPRISE) {
+          reportEnterpriseError('approval decision', err);
           throw err;
         }
         // Backend not running; fallback to local state update below
@@ -510,6 +596,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetToDefault = async (): Promise<void> => {
+    if (api.IS_ENTERPRISE) {
+      console.warn('[veritas] demo reset is disabled in enterprise mode; backend data is authoritative.');
+      return;
+    }
     try {
       await api.resetDemo();
     } catch {
@@ -535,6 +625,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         policy,
         updatePolicy,
         executions,
+        syncError,
         refreshExecutions,
         submitTask,
         decideApproval,

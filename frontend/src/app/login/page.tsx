@@ -1,11 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DEMO_USERS } from '@/lib/mockData';
 import { UserRole } from '@/lib/types';
-import { ROLE_TOKENS, login, setAuthToken } from '@/lib/api';
+import {
+  ENTERPRISE_AUTH_PATH,
+  IS_ENTERPRISE,
+  ROLE_TOKENS,
+  VERITAS_TEST_MODE,
+  login,
+  setAuthToken,
+} from '@/lib/api';
 import { ShieldCheck, ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
@@ -14,6 +21,46 @@ export default function LoginPage() {
   const [password, setPassword] = useState('demo123456');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!IS_ENTERPRISE) return;
+    // Full document navigation: the backend must set HttpOnly session cookies.
+    window.location.assign(ENTERPRISE_AUTH_PATH);
+  }, []);
+
+  if (IS_ENTERPRISE) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-[#15171a] px-6 text-[#d7d9dd]">
+        <div className="w-full max-w-[380px]">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[#3b3e45] bg-[#121317]">
+              <ShieldCheck className="h-4 w-4 stroke-[2]" />
+            </span>
+            <span className="font-trigger text-[20px] font-medium tracking-[-0.03em] text-[#e8e9ec]">VERITAS</span>
+          </div>
+          <h1 className="mt-10 font-trigger text-[32px] font-medium leading-tight tracking-[-0.03em] text-[#e8e9ec]">
+            Sign in to Console
+          </h1>
+          <p className="mt-2 font-body-trigger text-[13px] leading-relaxed text-[#878c99]">
+            {VERITAS_TEST_MODE
+              ? 'Starting an automated test session with the configured identity.'
+              : 'You will be redirected to your organization’s identity provider.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.assign(ENTERPRISE_AUTH_PATH)}
+            className="group mt-7 inline-flex h-10 w-full items-center justify-center gap-2 rounded bg-[#a8ff53] px-4 font-body-trigger text-[14px] font-medium text-[#121317] transition-colors hover:bg-[#cfffa0]"
+          >
+            <span>{VERITAS_TEST_MODE ? 'Continue to test session' : 'Continue to identity provider'}</span>
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </button>
+          <p className="mt-5 font-code text-[9px] uppercase leading-relaxed tracking-[0.12em] text-[#5f6570]">
+            Access is controlled by your identity provider and tenant policy.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   const handleSelectDemoUser = (role: UserRole) => {
     const user = DEMO_USERS.find((u) => u.role === role);
