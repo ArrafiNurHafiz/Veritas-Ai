@@ -287,6 +287,113 @@ class EnterpriseAppTests(unittest.TestCase):
         self.assertGreaterEqual(pol.json()["version"], 2)
         self.assertEqual(pol.json()["source"]["auto_approve_limit_idr"], 6_000_000)
 
+    def test_08_ssrf_guard_webhook_egress_and_erp_adapter(self):
+        import http.server
+        import threading
+        from enterprise.adapters import SsrfBlockedError, sign_webhook_payload, validate_outbound_url
+
+        # SSRF blocks non-HTTPS, loopback, and cloud metadata IPs
+        prev_insecure = os.environ.pop("VERITAS_ALLOW_INSECURE_WEBHOOKS", None)
+        try:
+            with self.assertRaises(SsrfBlockedError):
+                validate_outbound_url("http://example.com/hook")
+            with self.assertRaises(SsrfBlockedError):
+                validate_outbound_url("https://169.254.169.254/latest/meta-data")
+            with self.assertRaises(SsrfBlockedError):
+                validate_outbound_url("https://127.0.0.1:8100/hook")
+        finally:
+            if prev_insecure is not None:
+                os.environ["VERITAS_ALLOW_INSECURE_WEBHOOKS"] = prev_insecure
+
+        received: list[dict] = []
+
+        class _HookHandler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length)
+                received.append({
+                    "path": self.path,
+                    "body": body,
+                    "sig": self.headers.get("X-Veritas-Signature", ""),
+                    "idemp": self.headers.get("Idempotency-Key", ""),
+                })
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+
+            def log_message(self, *_args):
+                return
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), _HookHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        hook_url = f"http://127.0.0.1:{server.server_port}/webhook"
+
+        self.identity("op-1", "operator")
+        try:
+            # 1. Sensitive field blocked before any network call
+            blocked = self.client.post(
+                "/api/v1/egress/send",
+                headers={"Idempotency-Key": "egress-sens-1"},
+                json={"destination": "mock://crm", "payload": {"customer": "Acme", "api_key": "secret"}},
+            )
+            self.assertEqual(blocked.status_code, 403, blocked.text)
+            self.assertEqual(blocked.json()["reason_code"], "SENSITIVE_FIELD")
+            self.assertEqual(len(received), 0)
+
+            # 2. Unlisted destination blocked
+            unlisted = self.client.post(
+                "/api/v1/egress/send",
+                headers={"Idempotency-Key": "egress-off-1"},
+                json={"destination": "https://evil.example/drop", "payload": {"ok": True}},
+            )
+            self.assertEqual(unlisted.status_code, 403)
+            self.assertEqual(unlisted.json()["reason_code"], "DESTINATION_NOT_ALLOWED")
+
+            # 3. Allowlisted webhook receives HMAC-signed payload; replay does not duplicate
+            os.environ["VERITAS_ALLOW_INSECURE_WEBHOOKS"] = "1"
+            os.environ["VERITAS_EGRESS_DESTINATIONS"] = hook_url
+            os.environ["VERITAS_EGRESS_HMAC_SECRET"] = "test-hmac-secret"
+            ok = self.client.post(
+                "/api/v1/egress/send",
+                headers={"Idempotency-Key": "egress-hook-1"},
+                json={"destination": hook_url, "payload": {"invoice_id": "INV-9", "status": "ok"}},
+            )
+            self.assertEqual(ok.status_code, 200, ok.text)
+            self.assertEqual(ok.json()["delivery_status"], "DELIVERED")
+            self.assertEqual(len(received), 1)
+            expected_sig = "sha256=" + sign_webhook_payload(received[0]["body"], "test-hmac-secret")
+            self.assertEqual(received[0]["sig"], expected_sig)
+
+            replay = self.client.post(
+                "/api/v1/egress/send",
+                headers={"Idempotency-Key": "egress-hook-1"},
+                json={"destination": hook_url, "payload": {"invoice_id": "INV-9", "status": "ok"}},
+            )
+            self.assertEqual(replay.status_code, 200)
+            self.assertTrue(replay.json()["replayed"])
+            self.assertEqual(len(received), 1)
+
+            # 4. ERP tool adapter executes real HTTP POST on auto-approved task
+            os.environ["VERITAS_ERP_WEBHOOK_URL"] = hook_url
+            os.environ["VERITAS_ERP_HMAC_SECRET"] = "erp-secret"
+            task_res = self.client.post(
+                "/api/v1/tasks",
+                headers={"Idempotency-Key": "erp-task-1"},
+                json={"task_type": "invoice_review", "payload": {
+                    "invoice_id": "INV-ERP-1", "amount_idr": 1_000_000, "vendor": "ABC",
+                }},
+            )
+            self.assertEqual(task_res.status_code, 202, task_res.text)
+            self.assertEqual(task_res.json()["status"], "SUCCEEDED")
+            self.assertEqual(len(received), 2)
+        finally:
+            server.shutdown()
+            server.server_close()
+            for key in ("VERITAS_ALLOW_INSECURE_WEBHOOKS", "VERITAS_EGRESS_DESTINATIONS",
+                        "VERITAS_EGRESS_HMAC_SECRET", "VERITAS_ERP_WEBHOOK_URL", "VERITAS_ERP_HMAC_SECRET"):
+                os.environ.pop(key, None)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
