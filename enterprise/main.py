@@ -10,6 +10,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import json
 import os
+import time
 import uuid
 from typing import Any, Mapping
 
@@ -31,7 +32,8 @@ from .auth import (
 from .config import get_engine, session_scope
 from .hashing import GENESIS_HASH, canonical_json, sha256, utc_now
 from .llm import propose
-from .rbac import assert_approval_allowed, assert_role, require_role
+from .passwords import hash_password, validate_password_strength, verify_password
+from .rbac import ROLES, assert_approval_allowed, assert_role, require_role
 from .session_store import InMemorySessionStore, configure_session_store
 from .tools import ToolRegistry
 
@@ -65,6 +67,48 @@ class PolicyRequest(BaseModel):
     vendors: list[str] | None = None
 
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+    tenant_id: str | None = None
+
+
+class UserCreateRequest(BaseModel):
+    email: str
+    display_name: str | None = None
+    role: str
+    password: str
+
+
+class UserRoleUpdateRequest(BaseModel):
+    role: str
+    status: str | None = Field(default=None, pattern="^(active|disabled)$")
+
+
+def _is_production() -> bool:
+    return os.environ.get("VERITAS_ENV", "").strip().lower() == "production"
+
+
+_LOGIN_WINDOW_SECONDS = 60
+_LOGIN_MAX_FAILURES = 5
+_LOGIN_FAILURES: dict[str, list[float]] = {}
+
+
+def _login_blocked(key: str) -> bool:
+    now = time.monotonic()
+    recent = [ts for ts in _LOGIN_FAILURES.get(key, ()) if now - ts < _LOGIN_WINDOW_SECONDS]
+    _LOGIN_FAILURES[key] = recent
+    return len(recent) >= _LOGIN_MAX_FAILURES
+
+
+def _record_login_failure(key: str) -> None:
+    _LOGIN_FAILURES.setdefault(key, []).append(time.monotonic())
+
+
+def _clear_login_failures(key: str) -> None:
+    _LOGIN_FAILURES.pop(key, None)
+
+
 # --------------------------------------------------------------------------- signing
 
 _SIGNER: tuple[Ed25519PrivateKey, str] | None = None
@@ -81,6 +125,8 @@ def signer() -> tuple[Ed25519PrivateKey, str]:
                 raise RuntimeError("VERITAS_SIGNING_SEED must be 64 hex characters") from exc
             if len(seed) != 32:
                 raise RuntimeError("VERITAS_SIGNING_SEED must be 64 hex characters")
+        elif _is_production():
+            raise RuntimeError("VERITAS_SIGNING_SEED (64 hex chars) is required when VERITAS_ENV=production")
         else:
             seed = os.urandom(32)
         private = Ed25519PrivateKey.from_private_bytes(seed)
@@ -175,6 +221,21 @@ def bootstrap() -> None:
                     id=f"tool_{uuid.uuid4().hex[:12]}",
                     tool_name=tool,
                 )
+        admin_email = os.environ.get("VERITAS_BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
+        admin_password = os.environ.get("VERITAS_BOOTSTRAP_ADMIN_PASSWORD", "")
+        if admin_email and admin_password:
+            existing_user = repo.get_user_by_email(session, email=admin_email)
+            if existing_user is None:
+                validate_password_strength(admin_password)
+                existing_user = repo.create_user(
+                    session,
+                    id=f"usr_{uuid.uuid4().hex[:12]}",
+                    email=admin_email,
+                    display_name=os.environ.get("VERITAS_BOOTSTRAP_ADMIN_NAME", "Tenant Admin"),
+                    password_hash=hash_password(admin_password),
+                )
+            if repo.get_user_tenant(session, tenant_id=tenant_id, user_id=existing_user.id) is None:
+                repo.add_user_to_tenant(session, tenant_id=tenant_id, user_id=existing_user.id, role="admin")
 
 
 # --------------------------------------------------------------------------- helpers
@@ -332,7 +393,9 @@ def auth_test_login(
     tenant_id: str | None = Query(default=None),
     role: str | None = Query(default=None),
 ) -> dict[str, Any]:
-    """Issue a local test session. Only available with the explicit dev flag."""
+    """Issue a local test session. Disabled in production or without explicit dev flag."""
+    if _is_production():
+        raise ApiError(404, "NOT_FOUND", "Test login is disabled.")
     mode = os.environ.get("VERITAS_AUTH_TEST_MODE", "").strip().lower()
     if mode not in {"1", "true", "yes", "on"}:
         raise ApiError(404, "NOT_FOUND", "Test login is disabled.")
@@ -364,9 +427,166 @@ async def auth_callback(request: Request, response: Response) -> dict[str, Any]:
     return {"user_id": identity.user_id, "tenant_id": identity.tenant_id, "roles": list(identity.roles)}
 
 
+@app.post("/api/v1/auth/login")
+def auth_password_login(body: LoginRequest, response: Response) -> dict[str, Any]:
+    """Authenticate an enterprise user against scrypt password hashes in the database."""
+    email = body.email.strip().lower()
+    if not email or not body.password:
+        raise ApiError(401, "INVALID_CREDENTIALS", "Email and password are required.")
+    if _login_blocked(email):
+        raise ApiError(429, "RATE_LIMITED", "Too many failed login attempts; retry later.")
+    with session_scope() as session:
+        user = repo.get_user_by_email(session, email=email)
+        if user is None or user.status != "active" or not verify_password(body.password, user.password_hash):
+            _record_login_failure(email)
+            raise ApiError(401, "INVALID_CREDENTIALS", "Invalid email or password.")
+        memberships = repo.list_user_memberships(session, user_id=user.id)
+        if not memberships:
+            _record_login_failure(email)
+            raise ApiError(403, "NO_TENANT_ACCESS", "User has no active tenant membership.")
+        requested_tenant = (body.tenant_id or "").strip()
+        if requested_tenant:
+            membership = next((m for m in memberships if m.tenant_id == requested_tenant), None)
+            if membership is None:
+                raise ApiError(403, "TENANT_FORBIDDEN", "User is not a member of the requested tenant.")
+        else:
+            membership = memberships[0]
+        _clear_login_failures(email)
+        identity = Identity(
+            user_id=user.id,
+            tenant_id=membership.tenant_id,
+            roles=(membership.role,),
+            email=user.email,
+        )
+        csrf_token = issue_session(response, identity)
+        repo.create_audit_event(
+            session,
+            tenant_id=identity.tenant_id,
+            actor=identity.user_id,
+            action="auth.login",
+            target_type="user",
+            target_id=user.id,
+            payload={"method": "password", "role": membership.role},
+        )
+        return {
+            "user": user.id,
+            "user_id": user.id,
+            "email": user.email,
+            "display_name": user.display_name or user.email.split("@")[0],
+            "role": membership.role,
+            "roles": [membership.role],
+            "tenant_id": membership.tenant_id,
+            "csrf_token": csrf_token,
+        }
+
+
 @app.post("/api/v1/auth/logout")
 def auth_logout(request: Request, response: Response) -> dict[str, bool]:
     return {"revoked": revoke_session(request, response)}
+
+
+# --------------------------------------------------------------------------- users & roles
+
+
+@app.get("/api/v1/users")
+def users_list(
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    with session_scope() as session:
+        users = repo.list_tenant_users_with_details(session, tenant_id=identity.tenant_id)
+        return {"users": users, "total": len(users)}
+
+
+@app.post("/api/v1/users", status_code=201)
+def users_create(
+    body: UserCreateRequest,
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    email = body.email.strip().lower()
+    role = body.role.strip().lower()
+    if "@" not in email:
+        raise ApiError(422, "INVALID_EMAIL", "A valid email address is required.")
+    if role not in ROLES:
+        raise ApiError(422, "INVALID_ROLE", f"Role must be one of: {', '.join(sorted(ROLES))}.")
+    try:
+        validate_password_strength(body.password)
+    except ValueError as exc:
+        raise ApiError(422, "WEAK_PASSWORD", str(exc)) from exc
+
+    with session_scope() as session:
+        existing = repo.get_user_by_email(session, email=email)
+        if existing is not None:
+            if repo.get_user_tenant(session, tenant_id=identity.tenant_id, user_id=existing.id) is not None:
+                raise ApiError(409, "USER_EXISTS", "User already belongs to this tenant.")
+            user = existing
+        else:
+            user = repo.create_user(
+                session,
+                id=f"usr_{uuid.uuid4().hex[:12]}",
+                email=email,
+                display_name=(body.display_name or "").strip() or email.split("@")[0],
+                password_hash=hash_password(body.password),
+            )
+        repo.add_user_to_tenant(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=user.id,
+            role=role,
+        )
+        repo.create_audit_event(
+            session,
+            tenant_id=identity.tenant_id,
+            actor=identity.user_id,
+            action="user.created",
+            target_type="user",
+            target_id=user.id,
+            payload={"email": user.email, "role": role},
+        )
+        return {
+            "user_id": user.id,
+            "email": user.email,
+            "display_name": user.display_name or user.email.split("@")[0],
+            "role": role,
+            "tenant_id": identity.tenant_id,
+            "status": "active",
+        }
+
+
+@app.patch("/api/v1/users/{user_id}/role")
+def users_update_role(
+    user_id: str,
+    body: UserRoleUpdateRequest,
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    role = body.role.strip().lower()
+    if role not in ROLES:
+        raise ApiError(422, "INVALID_ROLE", f"Role must be one of: {', '.join(sorted(ROLES))}.")
+    with session_scope() as session:
+        try:
+            updated = repo.update_user_tenant_role(
+                session,
+                tenant_id=identity.tenant_id,
+                user_id=user_id,
+                role=role,
+                status=body.status,
+            )
+        except repo.NotFound as exc:
+            raise _not_found("user") from exc
+        repo.create_audit_event(
+            session,
+            tenant_id=identity.tenant_id,
+            actor=identity.user_id,
+            action="user.role_updated",
+            target_type="user",
+            target_id=user_id,
+            payload={"role": updated.role, "status": updated.status},
+        )
+        return {
+            "user_id": updated.user_id,
+            "tenant_id": updated.tenant_id,
+            "role": updated.role,
+            "status": updated.status,
+        }
 
 
 # --------------------------------------------------------------------------- tasks
