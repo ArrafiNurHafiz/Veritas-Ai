@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-veritas}
+      POSTGRES_USER: ${POSTGRES_USER:-veritas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-veritas-local}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-veritas} -d ${POSTGRES_DB:-veritas}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [enterprise]
+
+  enterprise:
+    build:
+      context: .
+      dockerfile: enterprise/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-veritas}:${POSTGRES_PASSWORD:-veritas-local}@postgres:5432/${POSTGRES_DB:-veritas}
+      VERITAS_SIGNING_SEED: ${VERITAS_SIGNING_SEED:-2222222222222222222222222222222222222222222222222222222222222222}
+      VERITAS_BOOTSTRAP_TENANT_ID: ${VERITAS_BOOTSTRAP_TENANT_ID:-default}
+      VERITAS_BOOTSTRAP_TENANT_NAME: ${VERITAS_BOOTSTRAP_TENANT_NAME:-Default Tenant}
+      VERITAS_COOKIE_SECURE: ${VERITAS_COOKIE_SECURE:-0}
+      VERITAS_AUTH_TEST_MODE: ${VERITAS_AUTH_TEST_MODE:-true}
+      VERITAS_TEST_IDENTITY_JSON: '${VERITAS_TEST_IDENTITY_JSON:-{"user_id":"local-admin","tenant_id":"default","roles":["admin"]}}'
+      VERITAS_LLM_BASE_URL: ${VERITAS_LLM_BASE_URL:-}
+      VERITAS_LLM_API_KEY: ${VERITAS_LLM_API_KEY:-}
+      VERITAS_LLM_MODEL: ${VERITAS_LLM_MODEL:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8100:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [enterprise]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_VERITAS_MODE: enterprise
+        NEXT_PUBLIC_VERITAS_TEST_MODE: ${NEXT_PUBLIC_VERITAS_TEST_MODE:-1}
+        HARNESS_URL: http://enterprise:8100
+    environment:
+      HARNESS_URL: http://enterprise:8100
+      NEXT_PUBLIC_HARNESS_URL: http://enterprise:8100
+    depends_on:
+      enterprise:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [enterprise]
+
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    environment:
+      VERITAS_SITE_ADDRESS: ${VERITAS_SITE_ADDRESS:-:80}
+    ports:
+      - "8090:80"
+    volumes:
+      - ./enterprise/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [enterprise]
+
+volumes:
+  pgdata:
+  caddy-data:
+  caddy-config:
+
+networks:
+  enterprise:
