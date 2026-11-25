@@ -38,6 +38,7 @@ class EnterpriseAppTests(unittest.TestCase):
         cls.client.__exit__(None, None, None)
 
     def identity(self, user_id: str, role: str, tenant_id: str = "tenant-a") -> None:
+        self.client.cookies.clear()
         os.environ["VERITAS_TEST_IDENTITY_JSON"] = json.dumps(
             {"user_id": user_id, "tenant_id": tenant_id, "roles": [role], "email": f"{user_id}@test.local"}
         )
@@ -245,6 +246,46 @@ class EnterpriseAppTests(unittest.TestCase):
                 os.environ.pop("VERITAS_ENV", None)
             else:
                 os.environ["VERITAS_ENV"] = prev_env
+
+    def test_07_tool_registry_and_persistent_policy(self):
+        self.identity("admin-1", "admin")
+        tools_res = self.client.get("/api/v1/tools")
+        self.assertEqual(tools_res.status_code, 200, tools_res.text)
+        tool_names = {t["tool_name"] for t in tools_res.json()["tools"]}
+        self.assertIn("approve_invoice", tool_names)
+        self.assertIn("check_vendor_status", tool_names)
+
+        # Toggle check_vendor_status off and verify /api/v1/agents updates dynamically
+        toggled = self.client.patch(
+            "/api/v1/tools/check_vendor_status",
+            json={"enabled": False},
+        )
+        self.assertEqual(toggled.status_code, 200, toggled.text)
+        self.assertFalse(toggled.json()["enabled"])
+
+        agents_res = self.client.get("/api/v1/agents").json()
+        self.assertNotIn("check_vendor_status", agents_res["agents"][0]["allowed_tools"])
+
+        # Non-admin cannot toggle tools
+        self.identity("op-1", "operator")
+        self.assertEqual(
+            self.client.patch("/api/v1/tools/check_vendor_status", json={"enabled": True}).status_code,
+            403,
+        )
+
+        # Re-enable as admin and bump policy version
+        self.identity("admin-1", "admin")
+        self.assertEqual(
+            self.client.patch("/api/v1/tools/check_vendor_status", json={"enabled": True}).status_code,
+            200,
+        )
+        pol = self.client.put(
+            "/api/v1/policies",
+            json={"auto_approve_limit_idr": 6_000_000, "vendors": ["V-ABC", "V-XYZ", "V-NEW"]},
+        )
+        self.assertEqual(pol.status_code, 200, pol.text)
+        self.assertGreaterEqual(pol.json()["version"], 2)
+        self.assertEqual(pol.json()["source"]["auto_approve_limit_idr"], 6_000_000)
 
 
 if __name__ == "__main__":
