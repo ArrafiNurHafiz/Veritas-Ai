@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
+import { IS_ENTERPRISE } from '@/lib/api';
 import { ExecutionRecord } from '@/lib/types';
 import StateTimeline from '@/components/StateTimeline';
 import ReceiptViewer from '@/components/ReceiptViewer';
@@ -100,7 +101,7 @@ export default function TaskCenterPage() {
             </div>
           </div>
           <span className="text-[12px] text-amber-800 shrink-0">
-            (Switch to Marcus Vance - Operator via header)
+            {IS_ENTERPRISE ? '(Requires Operator or Admin role)' : '(Switch to Marcus Vance - Operator via header)'}
           </span>
         </div>
       ) : (
@@ -125,7 +126,7 @@ export default function TaskCenterPage() {
       {/* Preset Buttons */}
       <div className="space-y-2">
         <span className="text-[12px] font-semibold uppercase tracking-wider text-[#979799]">
-          Fast Demo Scenarios (Click to Preload)
+          {IS_ENTERPRISE ? 'Quick Invoice Templates' : 'Fast Demo Scenarios (Click to Preload)'}
         </span>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {presets.map((p, idx) => (

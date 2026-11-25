@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
+import { IS_ENTERPRISE } from '@/lib/api';
 import { ExecutionRecord } from '@/lib/types';
 import { 
   CheckCircle2, 
@@ -83,7 +84,7 @@ export default function ApprovalsPage() {
             </div>
           </div>
           <span className="text-[12px] text-amber-800">
-            (Use top role switcher to toggle to Sarah Jenkins - Approver)
+            {IS_ENTERPRISE ? '(Requires Approver or Admin role)' : '(Use top role switcher to toggle to Sarah Jenkins - Approver)'}
           </span>
         </div>
       ) : (
@@ -241,7 +242,15 @@ export default function ApprovalsPage() {
               )}
 
               <div className="text-[12px] text-[#777b86] italic">
-                * Approval will invoke the simulated <code className="font-mono">approve_invoice</code> tool in the Harness and issue a signed Ed25519 receipt with a local mock anchor.
+                {IS_ENTERPRISE ? (
+                  <>
+                    * Approval will execute <code className="font-mono">approve_invoice</code> via the Harness adapter and issue a signed Ed25519 receipt queued for anchoring.
+                  </>
+                ) : (
+                  <>
+                    * Approval will invoke the simulated <code className="font-mono">approve_invoice</code> tool in the Harness and issue a signed Ed25519 receipt with a local mock anchor.
+                  </>
+                )}
               </div>
             </div>
 

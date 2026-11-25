@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
+import { IS_ENTERPRISE } from '@/lib/api';
 import { 
   ShieldCheck, 
   Save, 
@@ -113,7 +114,7 @@ export default function PolicyManagerPage() {
             </div>
           </div>
           <span className="text-[12px] text-amber-800 shrink-0">
-            (Switch to Alexa Chen - Admin via top bar)
+            {IS_ENTERPRISE ? '(Requires Admin role)' : '(Switch to Alexa Chen - Admin via top bar)'}
           </span>
         </div>
       ) : (
