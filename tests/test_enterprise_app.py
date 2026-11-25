@@ -394,6 +394,79 @@ class EnterpriseAppTests(unittest.TestCase):
                         "VERITAS_EGRESS_HMAC_SECRET", "VERITAS_ERP_WEBHOOK_URL", "VERITAS_ERP_HMAC_SECRET"):
                 os.environ.pop(key, None)
 
+    def test_09_evm_anchor_outbox_and_sweep(self):
+        import http.server
+        import threading
+
+        txs: dict[str, dict] = {}
+
+        class _RpcHandler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                req = json.loads(self.rfile.read(length))
+                method = req.get("method")
+                params = req.get("params", [])
+                if method == "eth_sendTransaction":
+                    tx_hash = "0x" + "ab" * 32
+                    txs[tx_hash] = {"blockNumber": "0x1", "input": params[0]["data"]}
+                    result = tx_hash
+                elif method == "eth_getTransactionByHash":
+                    result = txs.get(params[0])
+                else:
+                    result = None
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"jsonrpc": "2.0", "id": req.get("id"), "result": result}).encode())
+
+            def log_message(self, *_args):
+                return
+
+        # 1. Simulate RPC outage (unreachable port) -> receipt stays durable, anchor pending
+        os.environ["VERITAS_ANCHOR_RPC_URL"] = "http://127.0.0.1:1"
+        os.environ["VERITAS_ANCHOR_FROM"] = "0x" + "11" * 20
+        self.identity("op-1", "operator")
+        try:
+            task_res = self.client.post(
+                "/api/v1/tasks",
+                headers={"Idempotency-Key": "chain-outage-1"},
+                json={"task_type": "invoice_review", "payload": {
+                    "invoice_id": "INV-CHAIN-1", "amount_idr": 1_000_000, "vendor": "ABC",
+                }},
+            )
+            self.assertEqual(task_res.status_code, 202, task_res.text)
+            receipt_id = task_res.json()["receipt_id"]
+            self.assertTrue(receipt_id)
+
+            receipt = self.client.get(f"/api/v1/receipts/{receipt_id}").json()
+            self.assertEqual(receipt["anchor"]["status"], "pending")
+            self.assertTrue(receipt["anchor"]["last_error"])
+
+            # Manual mock confirm is disabled in RPC mode
+            self.identity("admin-1", "admin")
+            manual = self.client.post(f"/api/v1/anchors/{receipt['anchor']['id']}/confirm")
+            self.assertEqual(manual.status_code, 409, manual.text)
+
+            # 2. Bring up mock EVM node and run outbox sweep -> anchor confirmed & verified
+            server = http.server.HTTPServer(("127.0.0.1", 0), _RpcHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                os.environ["VERITAS_ANCHOR_RPC_URL"] = f"http://127.0.0.1:{server.server_port}"
+                sweep = self.client.post("/api/v1/anchors/sweep")
+                self.assertEqual(sweep.status_code, 200, sweep.text)
+                self.assertGreaterEqual(sweep.json()["confirmed"], 1)
+
+                verified = self.client.post(f"/api/v1/receipts/{receipt_id}/verify").json()
+                self.assertTrue(verified["verified"], verified)
+                self.assertEqual(verified["anchor_status"], "confirmed")
+            finally:
+                server.shutdown()
+                server.server_close()
+        finally:
+            os.environ.pop("VERITAS_ANCHOR_RPC_URL", None)
+            os.environ.pop("VERITAS_ANCHOR_FROM", None)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
