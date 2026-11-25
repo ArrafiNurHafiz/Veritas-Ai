@@ -105,9 +105,19 @@ def list_tenants(session: Session, *, limit: int = 50, offset: int = 0) -> list[
 
 
 def create_user(
-    session: Session, *, id: str, email: str, display_name: str | None = None
+    session: Session,
+    *,
+    id: str,
+    email: str,
+    display_name: str | None = None,
+    password_hash: str | None = None,
 ) -> User:
-    row = User(id=id, email=email, display_name=display_name)
+    row = User(
+        id=id,
+        email=email.strip().lower(),
+        display_name=display_name,
+        password_hash=password_hash,
+    )
     session.add(row)
     session.flush()
     return row
@@ -115,6 +125,11 @@ def create_user(
 
 def get_user(session: Session, *, user_id: str) -> User | None:
     return session.get(User, user_id)
+
+
+def get_user_by_email(session: Session, *, email: str) -> User | None:
+    clean = email.strip().lower()
+    return session.scalar(select(User).where(User.email == clean))
 
 
 def list_users(session: Session, *, limit: int = 50, offset: int = 0) -> list[User]:
@@ -139,6 +154,16 @@ def get_user_tenant(
     return session.get(UserTenant, (_require_tenant(tenant_id), user_id))
 
 
+def list_user_memberships(session: Session, *, user_id: str) -> list[UserTenant]:
+    return list(
+        session.scalars(
+            select(UserTenant)
+            .where(UserTenant.user_id == user_id, UserTenant.status == "active")
+            .order_by(UserTenant.tenant_id)
+        )
+    )
+
+
 def list_user_tenants(
     session: Session, *, tenant_id: str, limit: int = 100, offset: int = 0
 ) -> list[UserTenant]:
@@ -152,6 +177,55 @@ def list_user_tenants(
             .offset(max(0, offset))
         )
     )
+
+
+def list_tenant_users_with_details(
+    session: Session, *, tenant_id: str, limit: int = 100, offset: int = 0
+) -> list[dict[str, Any]]:
+    tenant_id = _require_tenant(tenant_id)
+    stmt = (
+        select(User, UserTenant)
+        .join(UserTenant, User.id == UserTenant.user_id)
+        .where(UserTenant.tenant_id == tenant_id)
+        .order_by(User.email)
+        .limit(_limit(limit))
+        .offset(max(0, offset))
+    )
+    results: list[dict[str, Any]] = []
+    for user, membership in session.execute(stmt).all():
+        results.append(
+            {
+                "user_id": user.id,
+                "email": user.email,
+                "display_name": user.display_name or user.email.split("@")[0],
+                "role": membership.role,
+                "status": membership.status,
+                "user_status": user.status,
+                "tenant_id": membership.tenant_id,
+                "has_password": bool(user.password_hash),
+                "created_at": user.created_at,
+            }
+        )
+    return results
+
+
+def update_user_tenant_role(
+    session: Session,
+    *,
+    tenant_id: str,
+    user_id: str,
+    role: str,
+    status: str | None = None,
+) -> UserTenant:
+    tenant_id = _require_tenant(tenant_id)
+    row = get_user_tenant(session, tenant_id=tenant_id, user_id=user_id)
+    if row is None:
+        raise NotFound(f"user {user_id} not in tenant {tenant_id}")
+    row.role = role
+    if status is not None:
+        row.status = status
+    session.flush()
+    return row
 
 
 # --------------------------------------------------------------------------- sessions
