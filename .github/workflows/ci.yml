@@ -1,0 +1,60 @@
+name: VERITAS AI CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Verify Alembic upgrade & rollback cycle
+        env:
+          DATABASE_URL: sqlite:///./ci_alembic.db
+        run: |
+          alembic -c enterprise/alembic.ini upgrade head
+          alembic -c enterprise/alembic.ini downgrade base
+          alembic -c enterprise/alembic.ini upgrade head
+          rm -f ci_alembic.db
+      - name: Run backend & enterprise test suites
+        run: |
+          export VERITAS_DB="" VERITAS_AGENT_URL="" VERITAS_AGENT_TOKEN=""
+          for t in test_demo test_e2e test_agent_service test_seed test_openapi test_enterprise_llm; do
+            python "tests/${t}.py"
+          done
+          python -m pytest tests/test_enterprise_data.py tests/test_enterprise_app.py -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint frontend
+        run: pnpm eslint src/
+      - name: Production enterprise build
+        env:
+          NEXT_PUBLIC_VERITAS_MODE: enterprise
+        run: pnpm build
