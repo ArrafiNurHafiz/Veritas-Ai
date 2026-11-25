@@ -716,6 +716,39 @@ def get_anchor(session: Session, *, tenant_id: str, anchor_id: str) -> Anchor | 
     )
 
 
+def list_pending_anchors_for_sweep(session: Session, *, limit: int = 50) -> list[Anchor]:
+    return list(
+        session.scalars(
+            select(Anchor)
+            .where(Anchor.status == "pending")
+            .order_by(Anchor.created_at)
+            .limit(_limit(limit))
+        )
+    )
+
+
+def update_anchor_attempt(
+    session: Session,
+    *,
+    tenant_id: str,
+    anchor_id: str,
+    tx_ref: str | None = None,
+    status: str | None = None,
+    last_error: str | None = None,
+) -> Anchor:
+    row = get_anchor(session, tenant_id=tenant_id, anchor_id=anchor_id)
+    if row is None:
+        raise NotFound(f"anchor {anchor_id} not found")
+    row.attempts = (row.attempts or 0) + 1
+    if tx_ref is not None:
+        row.tx_ref = tx_ref
+    if status is not None:
+        row.status = status
+    row.last_error = last_error
+    session.flush()
+    return row
+
+
 def list_anchors(
     session: Session, *, tenant_id: str, status: str | None = None, limit: int = 50, offset: int = 0
 ) -> list[Anchor]:
