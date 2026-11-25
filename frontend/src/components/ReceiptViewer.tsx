@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { ExecutionReceipt } from '@/lib/types';
 import { verifyReceiptPayload, VerificationResult } from '@/lib/crypto';
+import { IS_ENTERPRISE } from '@/lib/api';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -220,7 +221,7 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
         <div className="p-4 space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[#979799]">
-              3. Local Mock Anchor
+              {IS_ENTERPRISE ? '3. Cryptographic Anchor' : '3. Local Mock Anchor'}
             </span>
             <span
               className={`text-[11px] font-medium ${

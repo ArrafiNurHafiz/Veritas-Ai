@@ -14,6 +14,7 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 import { useApp } from '@/lib/store';
+import { IS_ENTERPRISE } from '@/lib/api';
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
@@ -154,7 +155,9 @@ export default function DashboardSidebar() {
           </div>
           <div className="flex justify-between">
             <span>Ledger Anchor:</span>
-            <span className="font-mono text-[#17191c]">Local mock anchor</span>
+            <span className="font-mono text-[#17191c]">
+              {IS_ENTERPRISE ? 'PostgreSQL + Outbox' : 'Local mock anchor'}
+            </span>
           </div>
         </div>
         <div className="pt-1 border-t border-[#f2f2f3]">
