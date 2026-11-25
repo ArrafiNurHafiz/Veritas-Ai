@@ -28,6 +28,12 @@ from .adapters import (
     execute_erp_tool,
     find_sensitive_fields,
 )
+from .anchor_worker import (
+    AnchorOutboxWorker,
+    process_anchor,
+    rpc_enabled,
+    sweep_pending_anchors,
+)
 from .auth import (
     ApiError,
     Identity,
@@ -45,10 +51,17 @@ from .rbac import ROLES, assert_approval_allowed, assert_role, require_role
 from .session_store import InMemorySessionStore, configure_session_store
 from .tools import ToolRegistry
 
+_OUTBOX_WORKER = AnchorOutboxWorker()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     bootstrap()
-    yield
+    _OUTBOX_WORKER.start()
+    try:
+        yield
+    finally:
+        _OUTBOX_WORKER.stop()
 
 
 app = FastAPI(title="VERITAS AI Enterprise", version="1.0.0", lifespan=lifespan)
@@ -307,7 +320,7 @@ def _issue_receipt(
         signature=signature,
         key_id=key_id,
     )
-    repo.create_anchor(
+    anchor = repo.create_anchor(
         session,
         tenant_id=tenant_id,
         id=f"anc_{uuid.uuid4().hex[:16]}",
@@ -315,6 +328,8 @@ def _issue_receipt(
         receipt_hash=digest,
         status="pending",
     )
+    if rpc_enabled():
+        process_anchor(session, anchor, actor=actor)
     repo.set_execution_status(
         session, tenant_id=tenant_id, execution_id=execution_id,
         status="SUCCEEDED", decision="ALLOW" if decision == "ALLOW" else "APPROVAL_REQUIRED",
@@ -992,12 +1007,26 @@ def receipt_verify(
         return _verification(receipt, anchors[0] if anchors else None)
 
 
+@app.post("/api/v1/anchors/sweep")
+def anchors_sweep(
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, int]:
+    """Flush pending EVM anchors for the caller's tenant."""
+    return sweep_pending_anchors(tenant_id=identity.tenant_id, actor=identity.user_id)
+
+
 @app.post("/api/v1/anchors/{anchor_id}/confirm")
 def anchor_confirm(
     anchor_id: str,
     identity: Identity = Depends(require_role("admin")),
 ) -> dict[str, Any]:
-    """Confirm the local mock anchor. This is not a blockchain proof."""
+    """Confirm the local mock anchor. Disabled when an EVM RPC anchor URL is configured."""
+    if rpc_enabled():
+        raise ApiError(
+            409,
+            "ANCHOR_MODE",
+            "Manual confirm is disabled while VERITAS_ANCHOR_RPC_URL is configured.",
+        )
     with session_scope() as session:
         anchor = repo.get_anchor(session, tenant_id=identity.tenant_id, anchor_id=anchor_id)
         if anchor is None:
