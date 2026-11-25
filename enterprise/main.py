@@ -16,9 +16,9 @@ from typing import Any, Mapping
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from . import oidc, repositories as repo
 from .adapters import (
@@ -69,6 +69,35 @@ install_error_handler(app)
 
 if os.environ.get("VERITAS_SESSION_STORE", "").strip().lower() == "memory":
     configure_session_store(InMemorySessionStore())
+
+_HTTP_REQUESTS: dict[tuple[str, str, int], int] = {}
+
+
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next: Any) -> Response:
+    cid = request.headers.get("X-Correlation-ID", "").strip() or uuid.uuid4().hex[:16]
+    request.state.correlation_id = cid
+    start = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+    key = (request.method, request.url.path, response.status_code)
+    _HTTP_REQUESTS[key] = _HTTP_REQUESTS.get(key, 0) + 1
+    response.headers["X-Correlation-ID"] = cid
+    if os.environ.get("VERITAS_LOG_JSON", "").strip() == "1":
+        print(
+            json.dumps(
+                {
+                    "ts": utc_now(),
+                    "correlation_id": cid,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "duration_ms": elapsed_ms,
+                }
+            ),
+            flush=True,
+        )
+    return response
 
 
 class TaskRequest(BaseModel):
@@ -1318,6 +1347,50 @@ def egress_send(
             payload={"destination": destination, "status": delivery_status, "mode": outcome.get("mode")},
         )
         return JSONResponse(status_code=http_status, content=_row_dict(row))
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def prometheus_metrics(x_internal_token: str = Header(default="")) -> str:
+    expected = os.environ.get("VERITAS_INTERNAL_TOKEN", "dev-internal").strip()
+    if not expected or x_internal_token != expected:
+        raise ApiError(401, "INTERNAL_AUTH_REQUIRED", "Valid X-Internal-Token is required.")
+
+    from .models import Anchor, Approval, Execution
+
+    with session_scope() as session:
+        exec_total = session.scalar(select(func.count()).select_from(Execution)) or 0
+        approvals_pending = (
+            session.scalar(
+                select(func.count()).select_from(Approval).where(Approval.status == "PENDING")
+            )
+            or 0
+        )
+        anchors_pending = (
+            session.scalar(
+                select(func.count()).select_from(Anchor).where(Anchor.status == "pending")
+            )
+            or 0
+        )
+
+    lines = [
+        "# HELP veritas_executions_total Total executions across tenants",
+        "# TYPE veritas_executions_total gauge",
+        f"veritas_executions_total {exec_total}",
+        "# HELP veritas_approvals_pending Pending human approvals",
+        "# TYPE veritas_approvals_pending gauge",
+        f"veritas_approvals_pending {approvals_pending}",
+        "# HELP veritas_anchors_pending Pending cryptographic anchors",
+        "# TYPE veritas_anchors_pending gauge",
+        f"veritas_anchors_pending {anchors_pending}",
+        "# HELP veritas_http_requests_total HTTP requests handled by status",
+        "# TYPE veritas_http_requests_total counter",
+    ]
+    for (method, path, status_code), count in sorted(_HTTP_REQUESTS.items()):
+        safe_path = path.replace('"', '\\"')
+        lines.append(
+            f'veritas_http_requests_total{{method="{method}",path="{safe_path}",status="{status_code}"}} {count}'
+        )
+    return "\n".join(lines) + "\n"
 
 
 @app.get("/api/v1/audit-events")
