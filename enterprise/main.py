@@ -21,6 +21,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 
 from . import oidc, repositories as repo
+from .adapters import (
+    AdapterDeliveryError,
+    SsrfBlockedError,
+    deliver_egress_webhook,
+    execute_erp_tool,
+    find_sensitive_fields,
+)
 from .auth import (
     ApiError,
     Identity,
@@ -31,6 +38,7 @@ from .auth import (
 )
 from .config import get_engine, session_scope
 from .hashing import GENESIS_HASH, canonical_json, sha256, utc_now
+from .kms import get_signing_key
 from .llm import propose
 from .passwords import hash_password, validate_password_strength, verify_password
 from .rbac import ROLES, assert_approval_allowed, assert_role, require_role
@@ -89,6 +97,11 @@ class ToolToggleRequest(BaseModel):
     enabled: bool
 
 
+class EgressRequest(BaseModel):
+    destination: str
+    payload: dict[str, Any]
+
+
 def _is_production() -> bool:
     return os.environ.get("VERITAS_ENV", "").strip().lower() == "production"
 
@@ -115,33 +128,9 @@ def _clear_login_failures(key: str) -> None:
 
 # --------------------------------------------------------------------------- signing
 
-_SIGNER: tuple[Ed25519PrivateKey, str] | None = None
-
-
 def signer() -> tuple[Ed25519PrivateKey, str]:
-    global _SIGNER
-    if _SIGNER is None:
-        seed_hex = os.environ.get("VERITAS_SIGNING_SEED", "").strip()
-        if seed_hex:
-            try:
-                seed = bytes.fromhex(seed_hex)
-            except ValueError as exc:
-                raise RuntimeError("VERITAS_SIGNING_SEED must be 64 hex characters") from exc
-            if len(seed) != 32:
-                raise RuntimeError("VERITAS_SIGNING_SEED must be 64 hex characters")
-        elif _is_production():
-            raise RuntimeError("VERITAS_SIGNING_SEED (64 hex chars) is required when VERITAS_ENV=production")
-        else:
-            seed = os.urandom(32)
-        private = Ed25519PrivateKey.from_private_bytes(seed)
-        public = private.public_key()
-        from cryptography.hazmat.primitives import serialization
-
-        raw = public.public_bytes(
-            serialization.Encoding.Raw, serialization.PublicFormat.Raw
-        )
-        _SIGNER = (private, sha256(raw)[:16])
-    return _SIGNER
+    key = get_signing_key()
+    return key.private_key, key.key_id
 
 
 # --------------------------------------------------------------------------- policy
@@ -335,17 +324,43 @@ def _issue_receipt(
 
 
 def _execute_tool(session: Any, *, tenant_id: str, execution: Any, args: Mapping[str, Any]) -> None:
+    tool_name = execution.tool or "approve_invoice"
+    try:
+        outcome = execute_erp_tool(
+            execution_id=execution.id,
+            tenant_id=tenant_id,
+            tool_name=tool_name,
+            arguments=args,
+        )
+    except (SsrfBlockedError, AdapterDeliveryError) as exc:
+        repo.set_execution_status(
+            session,
+            tenant_id=tenant_id,
+            execution_id=execution.id,
+            status="FAILED",
+            decision=execution.decision or "ALLOW",
+            reason_code="TOOL_ADAPTER_FAILED",
+        )
+        _append_event(
+            session,
+            tenant_id=tenant_id,
+            execution_id=execution.id,
+            event_type="FAILED",
+            data={"tool": tool_name, "error": str(exc)},
+        )
+        raise ApiError(502, "TOOL_EXECUTION_FAILED", str(exc)) from exc
+
     repo.record_tool_call(
         session,
         tenant_id=tenant_id,
         id=f"call_{uuid.uuid4().hex[:16]}",
         execution_id=execution.id,
-        tool=execution.tool or "approve_invoice",
+        tool=tool_name,
         idempotency_key=f"call-{execution.id}",
     )
     _append_event(
         session, tenant_id=tenant_id, execution_id=execution.id,
-        event_type="EXECUTING", data={"tool": execution.tool},
+        event_type="EXECUTING", data={"tool": tool_name, "adapter": outcome.get("mode")},
     )
 
 
@@ -1126,6 +1141,154 @@ def verify_supplied_receipt(
         "anchor_matches": anchor_matches,
         "verified": verified,
     }
+
+
+@app.get("/api/v1/egress")
+def egress_list(
+    identity: Identity = Depends(require_role("operator", "approver", "admin", "auditor")),
+) -> dict[str, Any]:
+    with session_scope() as session:
+        rows = repo.list_egress_deliveries(session, tenant_id=identity.tenant_id)
+        return {"deliveries": [_row_dict(row) for row in rows], "total": len(rows)}
+
+
+@app.post("/api/v1/egress/send")
+def egress_send(
+    body: EgressRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+    identity: Identity = Depends(require_role("operator", "admin")),
+) -> JSONResponse:
+    destination = body.destination.strip()
+    if not destination:
+        raise ApiError(422, "INVALID_DESTINATION", "destination is required.")
+    payload_digest = sha256(canonical_json({"destination": destination, "payload": body.payload}))
+
+    with session_scope() as session:
+        existing = repo.get_egress_by_idempotency_key(
+            session, tenant_id=identity.tenant_id, idempotency_key=idempotency_key
+        )
+        if existing is not None:
+            if existing.payload_digest != payload_digest:
+                raise ApiError(409, "IDEMPOTENCY_CONFLICT", "Idempotency-Key already used with different payload.")
+            if existing.delivery_status != "FAILED":
+                status_code = 200 if existing.decision == "ALLOW" else 403
+                return JSONResponse(status_code=status_code, content={**_row_dict(existing), "replayed": True})
+
+        policy = active_policy(session, identity.tenant_id)
+        policy_src = policy_from_row(policy)
+        env_dests = {
+            d.strip()
+            for d in os.environ.get("VERITAS_EGRESS_DESTINATIONS", "mock://crm,mock://ledger").split(",")
+            if d.strip()
+        }
+        allowed_dests = set(policy_src.get("destinations") or []) | env_dests
+
+        sensitive = find_sensitive_fields(body.payload)
+        if sensitive:
+            row = repo.create_egress_delivery(
+                session,
+                tenant_id=identity.tenant_id,
+                id=f"dlv_{uuid.uuid4().hex[:16]}",
+                idempotency_key=idempotency_key,
+                destination=destination,
+                payload_digest=payload_digest,
+                decision="DENY",
+                reason_code="SENSITIVE_FIELD",
+                actor=identity.user_id,
+                sensitive_fields=",".join(sensitive),
+                delivery_status="SKIPPED",
+            )
+            repo.create_audit_event(
+                session, tenant_id=identity.tenant_id, actor=identity.user_id,
+                action="egress.denied", target_type="egress", target_id=row.id,
+                payload={"reason": "SENSITIVE_FIELD", "fields": sensitive},
+            )
+            return JSONResponse(status_code=403, content=_row_dict(row))
+
+        if destination not in allowed_dests:
+            row = repo.create_egress_delivery(
+                session,
+                tenant_id=identity.tenant_id,
+                id=f"dlv_{uuid.uuid4().hex[:16]}",
+                idempotency_key=idempotency_key,
+                destination=destination,
+                payload_digest=payload_digest,
+                decision="DENY",
+                reason_code="DESTINATION_NOT_ALLOWED",
+                actor=identity.user_id,
+                delivery_status="SKIPPED",
+            )
+            repo.create_audit_event(
+                session, tenant_id=identity.tenant_id, actor=identity.user_id,
+                action="egress.denied", target_type="egress", target_id=row.id,
+                payload={"reason": "DESTINATION_NOT_ALLOWED", "destination": destination},
+            )
+            return JSONResponse(status_code=403, content=_row_dict(row))
+
+        try:
+            outcome = deliver_egress_webhook(
+                destination=destination,
+                idempotency_key=idempotency_key,
+                tenant_id=identity.tenant_id,
+                payload=body.payload,
+            )
+            delivery_status = "DELIVERED"
+            last_error = None
+            http_status = 200
+        except SsrfBlockedError as exc:
+            delivery_status = "SKIPPED"
+            last_error = str(exc)
+            row = repo.create_egress_delivery(
+                session,
+                tenant_id=identity.tenant_id,
+                id=f"dlv_{uuid.uuid4().hex[:16]}",
+                idempotency_key=idempotency_key,
+                destination=destination,
+                payload_digest=payload_digest,
+                decision="DENY",
+                reason_code="SSRF_BLOCKED",
+                actor=identity.user_id,
+                delivery_status=delivery_status,
+            )
+            row.last_error = last_error
+            session.flush()
+            return JSONResponse(status_code=403, content=_row_dict(row))
+        except AdapterDeliveryError as exc:
+            delivery_status = "FAILED"
+            last_error = str(exc)
+            outcome = {"mode": "https_webhook"}
+            http_status = 502
+
+        if existing is not None and existing.delivery_status == "FAILED":
+            existing.delivery_status = delivery_status
+            existing.delivery_attempts = (existing.delivery_attempts or 0) + 1
+            existing.last_error = last_error
+            session.flush()
+            row = existing
+        else:
+            row = repo.create_egress_delivery(
+                session,
+                tenant_id=identity.tenant_id,
+                id=f"dlv_{uuid.uuid4().hex[:16]}",
+                idempotency_key=idempotency_key,
+                destination=destination,
+                payload_digest=payload_digest,
+                decision="ALLOW",
+                reason_code="ALLOWLISTED",
+                actor=identity.user_id,
+                delivery_status=delivery_status,
+            )
+            row.delivery_attempts = 1
+            row.last_error = last_error
+            session.flush()
+
+        repo.create_audit_event(
+            session, tenant_id=identity.tenant_id, actor=identity.user_id,
+            action="egress.delivered" if delivery_status == "DELIVERED" else "egress.failed",
+            target_type="egress", target_id=row.id,
+            payload={"destination": destination, "status": delivery_status, "mode": outcome.get("mode")},
+        )
+        return JSONResponse(status_code=http_status, content=_row_dict(row))
 
 
 @app.get("/api/v1/audit-events")
