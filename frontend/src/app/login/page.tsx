@@ -23,10 +23,24 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!IS_ENTERPRISE) return;
-    // Full document navigation: the backend must set HttpOnly session cookies.
+    if (!IS_ENTERPRISE || !VERITAS_TEST_MODE) return;
+    // Full document navigation: test-login sets HttpOnly session cookies.
     window.location.assign(ENTERPRISE_AUTH_PATH);
   }, []);
+
+  const handleEnterprisePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      await login(email.trim(), password);
+      router.push('/dashboard');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Sign in failed';
+      setErrorMsg(msg);
+      setIsLoading(false);
+    }
+  };
 
   if (IS_ENTERPRISE) {
     return (
@@ -44,18 +58,69 @@ export default function LoginPage() {
           <p className="mt-2 font-body-trigger text-[13px] leading-relaxed text-[#878c99]">
             {VERITAS_TEST_MODE
               ? 'Starting an automated test session with the configured identity.'
-              : 'You will be redirected to your organization’s identity provider.'}
+              : 'Sign in with your organization account or corporate SSO.'}
           </p>
+
+          {!VERITAS_TEST_MODE && (
+            <form onSubmit={handleEnterprisePasswordLogin} className="mt-6 space-y-4">
+              {errorMsg && (
+                <div className="flex items-center gap-2 rounded border border-rose-500/40 bg-rose-950/30 p-2.5 font-code text-[11px] text-rose-300">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <label htmlFor="ent-email" className="font-code text-[10px] uppercase tracking-[0.14em] text-[#878c99]">
+                  Work email
+                </label>
+                <input
+                  id="ent-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="h-10 w-full rounded border border-[#3b3e45] bg-[#121317] px-3 font-body-trigger text-[13px] text-[#e8e9ec] outline-none transition-colors placeholder:text-[#5f6570] focus:border-[#a8ff53]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="ent-password" className="font-code text-[10px] uppercase tracking-[0.14em] text-[#878c99]">
+                  Password
+                </label>
+                <input
+                  id="ent-password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="h-10 w-full rounded border border-[#3b3e45] bg-[#121317] px-3 font-body-trigger text-[13px] text-[#e8e9ec] outline-none transition-colors focus:border-[#a8ff53]"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="group inline-flex h-10 w-full items-center justify-center gap-2 rounded bg-[#a8ff53] px-4 font-body-trigger text-[14px] font-medium text-[#121317] transition-colors hover:bg-[#cfffa0] disabled:opacity-70"
+              >
+                <span>{isLoading ? 'Signing in…' : 'Sign in'}</span>
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </form>
+          )}
+
           <button
             type="button"
             onClick={() => window.location.assign(ENTERPRISE_AUTH_PATH)}
-            className="group mt-7 inline-flex h-10 w-full items-center justify-center gap-2 rounded bg-[#a8ff53] px-4 font-body-trigger text-[14px] font-medium text-[#121317] transition-colors hover:bg-[#cfffa0]"
+            className={`group inline-flex h-10 w-full items-center justify-center gap-2 rounded px-4 font-body-trigger text-[14px] font-medium transition-colors ${
+              VERITAS_TEST_MODE
+                ? 'mt-7 bg-[#a8ff53] text-[#121317] hover:bg-[#cfffa0]'
+                : 'mt-3 border border-[#3b3e45] bg-[#121317] text-[#e8e9ec] hover:border-[#5f6570]'
+            }`}
           >
-            <span>{VERITAS_TEST_MODE ? 'Continue to test session' : 'Continue to identity provider'}</span>
+            <span>{VERITAS_TEST_MODE ? 'Continue to test session' : 'Continue with Organization SSO'}</span>
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </button>
           <p className="mt-5 font-code text-[9px] uppercase leading-relaxed tracking-[0.12em] text-[#5f6570]">
-            Access is controlled by your identity provider and tenant policy.
+            Access is controlled by tenant RBAC and server-side sessions.
           </p>
         </div>
       </main>

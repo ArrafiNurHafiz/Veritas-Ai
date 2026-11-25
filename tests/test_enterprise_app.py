@@ -171,6 +171,81 @@ class EnterpriseAppTests(unittest.TestCase):
         self.assertFalse(tampered_res.json()["hash_matches"])
         self.assertFalse(tampered_res.json()["verified"])
 
+    def test_06_password_auth_users_and_production_guards(self):
+        from enterprise.passwords import hash_password, verify_password
+
+        encoded = hash_password("S3cur3P@ssword!")
+        self.assertTrue(encoded.startswith("scrypt$"))
+        self.assertTrue(verify_password("S3cur3P@ssword!", encoded))
+        self.assertFalse(verify_password("wrong-pass", encoded))
+
+        # Admin creates an operator user
+        self.identity("admin-1", "admin")
+        created = self.client.post(
+            "/api/v1/users",
+            json={
+                "email": "operator.real@company.com",
+                "display_name": "Real Operator",
+                "role": "operator",
+                "password": "StrongPassword123!",
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        user_id = created.json()["user_id"]
+
+        listed = self.client.get("/api/v1/users")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        users = listed.json()["users"]
+        self.assertTrue(any(u["email"] == "operator.real@company.com" for u in users))
+        self.assertFalse(any("password_hash" in u for u in users))
+
+        # Non-admin cannot list or create users
+        self.identity("op-1", "operator")
+        self.assertEqual(self.client.get("/api/v1/users").status_code, 403)
+
+        # Admin updates user role
+        self.identity("admin-1", "admin")
+        patched = self.client.patch(
+            f"/api/v1/users/{user_id}/role",
+            json={"role": "approver", "status": "active"},
+        )
+        self.assertEqual(patched.status_code, 200, patched.text)
+        self.assertEqual(patched.json()["role"], "approver")
+
+        # Real password login creates an authenticated session cookie + CSRF token
+        login_res = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": "operator.real@company.com", "password": "StrongPassword123!"},
+        )
+        self.assertEqual(login_res.status_code, 200, login_res.text)
+        self.assertEqual(login_res.json()["role"], "approver")
+        self.assertTrue(login_res.json()["csrf_token"])
+
+        # Wrong password fails with 401 and triggers rate limit after 5 attempts
+        for _ in range(5):
+            bad = self.client.post(
+                "/api/v1/auth/login",
+                json={"email": "operator.real@company.com", "password": "WrongPassword!"},
+            )
+            self.assertEqual(bad.status_code, 401)
+        limited = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": "operator.real@company.com", "password": "StrongPassword123!"},
+        )
+        self.assertEqual(limited.status_code, 429)
+
+        # Production guard disables test-login even if VERITAS_AUTH_TEST_MODE=true
+        prev_env = os.environ.get("VERITAS_ENV")
+        os.environ["VERITAS_ENV"] = "production"
+        try:
+            blocked_test_login = self.client.get("/api/v1/auth/test-login?role=admin")
+            self.assertEqual(blocked_test_login.status_code, 404)
+        finally:
+            if prev_env is None:
+                os.environ.pop("VERITAS_ENV", None)
+            else:
+                os.environ["VERITAS_ENV"] = prev_env
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
