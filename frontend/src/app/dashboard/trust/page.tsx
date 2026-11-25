@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
+import { IS_ENTERPRISE } from '@/lib/api';
 import ReceiptViewer from '@/components/ReceiptViewer';
 import { ShieldCheck, Fingerprint } from 'lucide-react';
 
@@ -30,7 +31,9 @@ export default function TrustExplorerPage() {
           Public Trust Explorer
         </h1>
         <p className="text-[16px] text-[#777b86]">
-          Independently verify Ed25519 signatures, RFC 8785 canonical hashes, and local mock anchors.
+          {IS_ENTERPRISE
+            ? 'Independently verify Ed25519 signatures, RFC 8785 canonical hashes, and cryptographic ledger anchors.'
+            : 'Independently verify Ed25519 signatures, RFC 8785 canonical hashes, and local mock anchors.'}
         </p>
       </div>
 

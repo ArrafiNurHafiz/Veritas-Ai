@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/lib/store';
+import { IS_ENTERPRISE } from '@/lib/api';
 import { 
   CheckCircle2, 
   Clock, 
@@ -71,7 +72,9 @@ export default function DashboardOverview() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1.5">
           <span className="text-[12px] font-semibold text-[#979799] uppercase tracking-wider">
-            Nexora Technologies • Procurement Operations
+            {IS_ENTERPRISE
+              ? `${currentUser.organizationName || currentUser.organizationId} • Procurement Operations`
+              : 'Nexora Technologies • Procurement Operations'}
           </span>
           <h1 className="font-display text-[44px] text-[#17191c] leading-[1.1] tracking-[-0.66px]">
             Governance & Execution Telemetry
@@ -311,7 +314,9 @@ export default function DashboardOverview() {
           <div className="space-y-1">
             <h3 className="font-display text-[22px] text-[#17191c]">Recent Agent Executions</h3>
             <p className="text-[13px] text-[#777b86]">
-              Deterministic progression: Planning &rarr; Policy Gate &rarr; Human Sign-off &rarr; Sandboxed Tool &rarr; Mock Anchor.
+              {IS_ENTERPRISE
+                ? 'Deterministic progression: Planning → Policy Gate → Human Sign-off → Sandboxed Tool → Cryptographic Anchor.'
+                : 'Deterministic progression: Planning → Policy Gate → Human Sign-off → Sandboxed Tool → Mock Anchor.'}
             </p>
           </div>
           <Link
