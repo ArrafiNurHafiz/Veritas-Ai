@@ -206,9 +206,11 @@ class PostgresSessionStore:
     def __init__(self, dsn: str, *, ttl_seconds: int | None = None) -> None:
         try:
             import psycopg  # type: ignore
+            from psycopg.rows import dict_row  # type: ignore
         except ImportError as exc:  # pragma: no cover - optional runtime dep
             raise RuntimeError("psycopg is required for VERITAS_SESSION_DSN=postgres*") from exc
         self._psycopg = psycopg
+        self._dict_row = dict_row
         self._dsn = dsn
         self._ttl = ttl_seconds or _ttl_seconds()
         with self._connect() as conn:
@@ -230,7 +232,7 @@ class PostgresSessionStore:
             )
 
     def _connect(self):
-        return self._psycopg.connect(self._dsn, autocommit=True)
+        return self._psycopg.connect(self._dsn, autocommit=True, row_factory=self._dict_row)
 
     def create(self, identity: Identity) -> IssuedSession:
         token, csrf = new_opaque_token(), new_opaque_token(16)
@@ -300,11 +302,15 @@ def get_session_store() -> SessionStore:
             return _STORE
         choice = os.environ.get("VERITAS_SESSION_STORE", "").strip().lower()
         dsn = os.environ.get("VERITAS_SESSION_DSN", "").strip()
+        if not dsn:
+            db_url = os.environ.get("DATABASE_URL", "").strip()
+            if db_url.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+                dsn = db_url.replace("postgresql+psycopg://", "postgresql://", 1)
         if choice == "memory":
             _STORE = InMemorySessionStore()
         elif choice in {"postgres", "postgresql"} or (not choice and dsn.startswith(("postgres://", "postgresql://"))):
             if not dsn:
-                raise RuntimeError("VERITAS_SESSION_DSN is required for the postgres session store")
+                raise RuntimeError("VERITAS_SESSION_DSN or Postgres DATABASE_URL is required for the postgres session store")
             _STORE = PostgresSessionStore(dsn)
         elif choice in {"", "sqlite"}:
             _STORE = SqliteSessionStore()
