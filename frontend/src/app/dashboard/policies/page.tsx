@@ -15,11 +15,18 @@ import {
 export default function PolicyManagerPage() {
   const { policy, updatePolicy, currentUser } = useApp();
 
-  const [threshold, setThreshold] = useState(policy.maxAutoAmountIdr);
-  const [vendorList, setVendorList] = useState<string[]>(policy.allowedVendors);
+  const [thresholdOverride, setThresholdOverride] = useState<{ key: string; value: number } | null>(null);
+  const [vendorOverride, setVendorOverride] = useState<{ key: string; value: string[] } | null>(null);
+  const policyKey = `${policy.version}:${policy.policyDigest}`;
+  const threshold = thresholdOverride?.key === policyKey ? thresholdOverride.value : policy.maxAutoAmountIdr;
+  const vendorList = vendorOverride?.key === policyKey ? vendorOverride.value : policy.allowedVendors;
+  const setThreshold = (value: number) => setThresholdOverride({ key: policyKey, value });
+  const setVendorList = (value: string[]) => setVendorOverride({ key: policyKey, value });
+
   const [newVendor, setNewVendor] = useState('');
   const defaultAction = policy.defaultAction;
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === 'admin';
@@ -44,6 +51,7 @@ export default function PolicyManagerPage() {
       return;
     }
     setErrorMsg(null);
+    setIsSaving(true);
     try {
       await updatePolicy({
         maxAutoAmountIdr: Number(threshold),
@@ -55,6 +63,8 @@ export default function PolicyManagerPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to update policy';
       setErrorMsg(msg);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -76,15 +86,17 @@ export default function PolicyManagerPage() {
 
         <button
           onClick={handleSave}
-          disabled={!isAdmin}
+          disabled={!isAdmin || isSaving}
           className="pill-button-filled !h-11 !px-6 !text-[14px] flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {saved ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
           <span>
             {!isAdmin
               ? `Read-Only (${currentUser.role})`
+              : isSaving
+              ? 'Publishing...'
               : saved
-              ? 'Policy Saved (v' + (policy.version + 1) + ')'
+              ? `Policy Saved (v${policy.version})`
               : 'Publish Policy Changes'}
           </span>
         </button>

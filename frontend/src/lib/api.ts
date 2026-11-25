@@ -325,6 +325,68 @@ export function updatePolicy(payload: {
   });
 }
 
+export interface TenantUserView {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: UserRole;
+  status: string;
+  user_status: string;
+  tenant_id: string;
+  has_password: boolean;
+  created_at: string;
+}
+
+export interface ToolView {
+  id: string;
+  tenant_id: string;
+  tool_name: string;
+  schema_version: string;
+  risk_tier: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+export function getUsers() {
+  return request<{ users: TenantUserView[]; total: number }>('/api/v1/users');
+}
+
+export function createUser(payload: {
+  email: string;
+  display_name?: string;
+  role: UserRole;
+  password: string;
+}) {
+  return request<TenantUserView>('/api/v1/users', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUserRole(
+  userId: string,
+  payload: { role: UserRole; status?: 'active' | 'disabled' },
+) {
+  return request<{ user_id: string; tenant_id: string; role: UserRole; status: string }>(
+    `/api/v1/users/${userId}/role`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function getTools() {
+  return request<{ tools: ToolView[] }>('/api/v1/tools');
+}
+
+export function setToolEnabled(toolName: string, enabled: boolean) {
+  return request<ToolView>(`/api/v1/tools/${encodeURIComponent(toolName)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export function resetDemo() {
   return request<{ status: string; executions: number; receipts: number; pending_approvals: number }>(
     '/api/v1/demo/reset',
