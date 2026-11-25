@@ -467,6 +467,24 @@ class EnterpriseAppTests(unittest.TestCase):
             os.environ.pop("VERITAS_ANCHOR_RPC_URL", None)
             os.environ.pop("VERITAS_ANCHOR_FROM", None)
 
+    def test_10_observability_correlation_and_metrics(self):
+        # Correlation ID echoed back on requests
+        health = self.client.get("/health/live", headers={"X-Correlation-ID": "trace-12345"})
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.headers.get("X-Correlation-ID"), "trace-12345")
+
+        # /metrics requires valid X-Internal-Token
+        denied = self.client.get("/metrics")
+        self.assertEqual(denied.status_code, 401)
+
+        token = os.environ.get("VERITAS_INTERNAL_TOKEN", "dev-internal")
+        metrics = self.client.get("/metrics", headers={"X-Internal-Token": token})
+        self.assertEqual(metrics.status_code, 200, metrics.text)
+        self.assertIn("veritas_executions_total", metrics.text)
+        self.assertIn("veritas_approvals_pending", metrics.text)
+        self.assertIn("veritas_anchors_pending", metrics.text)
+        self.assertIn("veritas_http_requests_total", metrics.text)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
