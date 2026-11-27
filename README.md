@@ -1,19 +1,39 @@
 <div align="center">
 
+<br />
+
+<img src="frontend/public/veritas-logo.png" alt="VERITAS AI Logo" width="110" />
+
 # VERITAS AI
 
 ### **Control Before Action** — Deterministic Runtime Governance Harness for Enterprise AI Agents
 
-[![CI](https://img.shields.io/github/actions/workflow/status/ArrafiNurHafiz/Veritas-Ai/ci.yml?branch=main&label=CI&logo=github)](https://github.com/ArrafiNurHafiz/Veritas-Ai/actions)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Enterprise_Harness-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Next.js-16_App_Router-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16_Append--Only-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Crypto](https://img.shields.io/badge/Proof-Ed25519_%2B_RFC_8785-16A34A)](#cryptographic-proof--audit-chain)
+[![CI](https://img.shields.io/github/actions/workflow/status/ArrafiNurHafiz/Veritas-Ai/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI)](https://github.com/ArrafiNurHafiz/Veritas-Ai/actions)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Harness-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Odoo 17](https://img.shields.io/badge/Odoo_17-CE_Live-714B67?style=for-the-badge&logo=odoo&logoColor=white)](docker-compose.odoo.yml)
+[![Crypto](https://img.shields.io/badge/Proof-Ed25519_%2B_RFC_8785-16A34A?style=for-the-badge)](#key-security--governance-guarantees)
 
-*Autonomous AI agents propose structured actions inside an isolated network—holding zero database credentials, signing keys, or direct write access. VERITAS enforces deterministic policy, human Separation of Duties, and tamper-evident Ed25519 receipts before any tool executes.*
+<br />
 
-[Quick Start (Docker)](#-quick-start-enterprise-stack) · [3-Minute Verification](#-3-minute-judge-verification-flow) · [Architecture](#-system-architecture) · [Agents & Tools](#-multi-agent-bounded-catalog) · [Test Suites](#-verification--testing) · [Pitch Deck](docs/VERITAS_AI_Build2036_Deck.pptx)
+> **AI proposes. Deterministic policy & humans decide. Cryptography proves it.**  
+> Autonomous AI agents propose structured JSON inside an isolated network—holding zero database credentials, signing keys, or direct write access. VERITAS enforces deterministic rules, human Separation of Duties, Anti-TOCTOU revalidation, and tamper-evident Ed25519 receipts before any tool executes.
+
+<br />
+
+[Quick Start](#-quick-start-enterprise-stack) · [3-Minute Judge Flow](#-3-minute-judge-verification-flow) · [Architecture](#-system-architecture) · [Agents & Tools](#-multi-agent-bounded-catalog) · [Tests](#-verification--testing) · [Pitch Deck](docs/VERITAS_AI_Build2036_Deck.pptx)
+
+<br />
+
+<table>
+  <tr>
+    <td align="center" width="33%"><strong>Proposal-Only Isolation</strong><br /><sub><code>agent_net</code> internal · 0 DB creds · 0 signing keys</sub></td>
+    <td align="center" width="33%"><strong>Deterministic Policy &amp; SoD</strong><br /><sub>403 Self-Approval Block · Anti-TOCTOU Resume Gate</sub></td>
+    <td align="center" width="33%"><strong>Cryptographic Audit Proof</strong><br /><sub>Ed25519 + RFC 8785 · PG16 Append-Only Triggers</sub></td>
+  </tr>
+</table>
 
 </div>
 
