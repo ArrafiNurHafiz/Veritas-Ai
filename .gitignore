@@ -2,9 +2,14 @@
 __pycache__/
 *.py[cod]
 *.db
+*.db-shm
+*.db-wal
+.~lock.*
+*.~lock.*#
 data/
 .pytest_cache/
 .playwright-mcp/
+veritas-demo-video/
 
 # Separate Next.js tree merged under frontend/; its nested .git was removed after import.
 
