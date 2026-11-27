@@ -99,6 +99,7 @@ export interface ExecutionRecord {
     vendor: string;
     amountIdr: number;
     description?: string;
+    raw?: Record<string, unknown>;
   };
   status: ExecutionStatus;
   proposal?: ToolCallProposal;
@@ -128,7 +129,10 @@ export interface AgentInfo {
   name: string;
   version: string;
   description: string;
-  status: 'OPERATIONAL' | 'PLANNED';
+  status: 'OPERATIONAL' | 'DISABLED' | 'PLANNED';
+  enabled?: boolean;
+  defaultTaskType?: string;
+  taskTypes?: string[];
   allowedTools: string[];
   totalExecutions: number;
   blockedCount: number;

@@ -71,15 +71,15 @@ export default function DashboardOverview() {
       {/* Title & Context */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1.5">
-          <span className="text-[12px] font-semibold text-[#979799] uppercase tracking-wider">
+          <span className="text-[12px] font-semibold text-[#6D7344] uppercase tracking-wider">
             {IS_ENTERPRISE
               ? `${currentUser.organizationName || currentUser.organizationId} • Procurement Operations`
               : 'Nexora Technologies • Procurement Operations'}
           </span>
-          <h1 className="font-display text-[44px] text-[#17191c] leading-[1.1] tracking-[-0.66px]">
+          <h1 className="font-display text-[44px] text-[#192319] leading-[1.1] tracking-[-0.66px]">
             Governance & Execution Telemetry
           </h1>
-          <p className="text-[16px] text-[#777b86]">
+          <p className="text-[16px] text-[#2D372D]">
             Real-time policy mediation, human-in-the-loop gates, and cryptographic ledger receipts.
           </p>
         </div>
@@ -98,27 +98,27 @@ export default function DashboardOverview() {
       {/* 4 Stat Cards in Steep Editorial Style */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Stat 1 */}
-        <div className="bg-[#f2f2f3] rounded-[24px] p-6 space-y-3">
+        <div className="bg-[#F0F0EC] rounded-[24px] p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] text-[#777b86] font-medium">Total Agent Tasks</span>
-            <span className="w-2 h-2 rounded-full bg-[#17191c]"></span>
+            <span className="text-[13px] text-[#2D372D] font-medium">Total Agent Tasks</span>
+            <span className="w-2 h-2 rounded-full bg-[#192319]"></span>
           </div>
           <div className="space-y-1">
-            <div className="font-sans text-[36px] font-medium text-[#17191c] leading-none">
+            <div className="font-sans text-[36px] font-medium text-[#192319] leading-none">
               {totalExecutions}
             </div>
-            <p className="text-[12px] text-[#777b86]">100% routed via policy gateway</p>
+            <p className="text-[12px] text-[#2D372D]">100% routed via policy gateway</p>
           </div>
         </div>
 
         {/* Stat 2 */}
-        <div className="bg-[#f2f2f3] rounded-[24px] p-6 space-y-3">
+        <div className="bg-[#F0F0EC] rounded-[24px] p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] text-[#777b86] font-medium">Auto-Approved (&le; 5M)</span>
+            <span className="text-[13px] text-[#2D372D] font-medium">Auto-Approved (&le; 5M)</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="space-y-1">
-            <div className="font-sans text-[36px] font-medium text-[#17191c] leading-none">
+            <div className="font-sans text-[36px] font-medium text-[#192319] leading-none">
               {autoApproved}
             </div>
             <p className="text-[12px] text-emerald-700 font-medium">Deterministic allowance</p>
@@ -127,32 +127,32 @@ export default function DashboardOverview() {
 
         {/* Stat 3 */}
         <div className={`rounded-[24px] p-6 space-y-3 border transition-all ${
-          pendingApprovals > 0 ? 'bg-amber-50 border-amber-200' : 'bg-[#f2f2f3] border-transparent'
+          pendingApprovals > 0 ? 'bg-amber-50 border-amber-200' : 'bg-[#F0F0EC] border-transparent'
         }`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[13px] font-medium ${pendingApprovals > 0 ? 'text-amber-900' : 'text-[#777b86]'}`}>
+            <span className={`text-[13px] font-medium ${pendingApprovals > 0 ? 'text-amber-900' : 'text-[#2D372D]'}`}>
               Pending Human Sign-Off
             </span>
-            <Clock className={`w-4 h-4 ${pendingApprovals > 0 ? 'text-amber-600' : 'text-[#777b86]'}`} />
+            <Clock className={`w-4 h-4 ${pendingApprovals > 0 ? 'text-amber-600' : 'text-[#2D372D]'}`} />
           </div>
           <div className="space-y-1">
-            <div className={`font-sans text-[36px] font-medium leading-none ${pendingApprovals > 0 ? 'text-amber-900' : 'text-[#17191c]'}`}>
+            <div className={`font-sans text-[36px] font-medium leading-none ${pendingApprovals > 0 ? 'text-amber-900' : 'text-[#192319]'}`}>
               {pendingApprovals}
             </div>
-            <p className={`text-[12px] ${pendingApprovals > 0 ? 'text-amber-800 font-medium' : 'text-[#777b86]'}`}>
+            <p className={`text-[12px] ${pendingApprovals > 0 ? 'text-amber-800 font-medium' : 'text-[#2D372D]'}`}>
               Awaiting role sign-off
             </p>
           </div>
         </div>
 
         {/* Stat 4 */}
-        <div className="bg-[#f2f2f3] rounded-[24px] p-6 space-y-3">
+        <div className="bg-[#F0F0EC] rounded-[24px] p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] text-[#777b86] font-medium">Policy Blocks / Rejections</span>
+            <span className="text-[13px] text-[#2D372D] font-medium">Policy Blocks / Rejections</span>
             <ShieldAlert className="w-4 h-4 text-rose-600" />
           </div>
           <div className="space-y-1">
-            <div className="font-sans text-[36px] font-medium text-[#17191c] leading-none">
+            <div className="font-sans text-[36px] font-medium text-[#192319] leading-none">
               {blockedViolations}
             </div>
             <p className="text-[12px] text-rose-700 font-medium">Zero unauthorized execution</p>
@@ -163,15 +163,15 @@ export default function DashboardOverview() {
       {/* Two Column Layout: Quick Dispatch + Active Policy */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Quick Dispatch Widget */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-[#ececec] shadow-sm space-y-5">
+        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm space-y-5">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-display text-[22px] text-[#17191c]">Interactive Policy Dispatcher</h3>
-              <p className="text-[13px] text-[#777b86]">
+              <h3 className="font-display text-[22px] text-[#192319]">Interactive Policy Dispatcher</h3>
+              <p className="text-[13px] text-[#2D372D]">
                 Instantly trigger policy evaluation with sample amounts to observe automatic allowance vs human gate.
               </p>
             </div>
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#f2f2f3] text-[#777b86]">
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#F0F0EC] text-[#2D372D]">
               Target: Procurement Agent
             </span>
           </div>
@@ -179,11 +179,11 @@ export default function DashboardOverview() {
           <form onSubmit={handleQuickSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-[#17191c]">Vendor Name</label>
+                <label className="text-[13px] font-medium text-[#192319]">Vendor Name</label>
                 <select
                   value={quickVendor}
                   onChange={(e) => setQuickVendor(e.target.value)}
-                  className="w-full bg-[#fafafb] border border-[#ececec] rounded-xl px-3.5 py-2.5 text-[14px] text-[#17191c] focus:outline-none focus:border-[#17191c]"
+                  className="w-full bg-[#F8F8F8] border border-[#DCDCD7] rounded-xl px-3.5 py-2.5 text-[14px] text-[#192319] focus:outline-none focus:border-[#192319]"
                 >
                   <option value="V-ABC">V-ABC (Whitelisted)</option>
                   <option value="V-XYZ">V-XYZ (Whitelisted)</option>
@@ -192,27 +192,27 @@ export default function DashboardOverview() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-[#17191c]">Invoice Amount (IDR)</label>
+                <label className="text-[13px] font-medium text-[#192319]">Invoice Amount (IDR)</label>
                 <div className="relative">
                   <input
                     type="number"
                     value={quickAmount}
                     onChange={(e) => setQuickAmount(e.target.value)}
-                    className="w-full bg-[#fafafb] border border-[#ececec] rounded-xl px-3.5 py-2.5 text-[14px] text-[#17191c] focus:outline-none focus:border-[#17191c]"
+                    className="w-full bg-[#F8F8F8] border border-[#DCDCD7] rounded-xl px-3.5 py-2.5 text-[14px] text-[#192319] focus:outline-none focus:border-[#192319]"
                     placeholder="8500000"
                   />
                   <div className="absolute right-2 top-2 flex gap-1">
                     <button
                       type="button"
                       onClick={() => setQuickAmount('3200000')}
-                      className="text-[11px] px-2 py-0.5 rounded bg-white border border-[#ececec] text-[#777b86] hover:text-[#17191c]"
+                      className="text-[11px] px-2 py-0.5 rounded bg-white border border-[#DCDCD7] text-[#2D372D] hover:text-[#192319]"
                     >
                       3.2M (Auto)
                     </button>
                     <button
                       type="button"
                       onClick={() => setQuickAmount('8500000')}
-                      className="text-[11px] px-2 py-0.5 rounded bg-white border border-[#ececec] text-[#777b86] hover:text-[#17191c]"
+                      className="text-[11px] px-2 py-0.5 rounded bg-white border border-[#DCDCD7] text-[#2D372D] hover:text-[#192319]"
                     >
                       8.5M (Gate)
                     </button>
@@ -222,7 +222,7 @@ export default function DashboardOverview() {
             </div>
 
             <div className="flex items-center justify-between pt-2">
-              <div className="text-[12px] text-[#777b86]">
+              <div className="text-[12px] text-[#2D372D]">
                 {Number(quickAmount) > policy.maxAutoAmountIdr ? (
                   <span className="text-amber-800 font-medium">
                     &bull; Exceeds IDR {policy.maxAutoAmountIdr.toLocaleString()} limit &rarr; Will trigger APPROVAL_REQUIRED
@@ -267,53 +267,53 @@ export default function DashboardOverview() {
         </div>
 
         {/* Active Policy Rules Card */}
-        <div className="bg-[#fafafb] rounded-2xl p-6 border border-[#ececec] flex flex-col justify-between space-y-4">
+        <div className="bg-[#F8F8F8] rounded-2xl p-6 border border-[#DCDCD7] flex flex-col justify-between space-y-4">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-[#979799] uppercase tracking-wider">Active Policy</span>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-white text-[#777b86] border border-[#ececec]">
+              <span className="text-[11px] font-semibold text-[#6D7344] uppercase tracking-wider">Active Policy</span>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-white text-[#2D372D] border border-[#DCDCD7]">
                 v{policy.version}
               </span>
             </div>
-            <h4 className="font-sans text-[16px] font-medium text-[#17191c] leading-snug">
+            <h4 className="font-sans text-[16px] font-medium text-[#192319] leading-snug">
               {policy.name}
             </h4>
-            <div className="space-y-2 text-[13px] text-[#777b86]">
-              <div className="flex justify-between py-1 border-b border-[#ececec]">
+            <div className="space-y-2 text-[13px] text-[#2D372D]">
+              <div className="flex justify-between py-1 border-b border-[#DCDCD7]">
                 <span>Auto-Approval Ceiling:</span>
-                <strong className="text-[#17191c]">Rp {policy.maxAutoAmountIdr.toLocaleString()}</strong>
+                <strong className="text-[#192319]">Rp {policy.maxAutoAmountIdr.toLocaleString()}</strong>
               </div>
-              <div className="flex justify-between py-1 border-b border-[#ececec]">
+              <div className="flex justify-between py-1 border-b border-[#DCDCD7]">
                 <span>Default Unregistered Rule:</span>
                 <span className="text-rose-700 font-mono font-medium">{policy.defaultAction}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-[#ececec]">
+              <div className="flex justify-between py-1 border-b border-[#DCDCD7]">
                 <span>Allowed Vendors:</span>
-                <span className="text-[#17191c]">{policy.allowedVendors.length} companies</span>
+                <span className="text-[#192319]">{policy.allowedVendors.length} companies</span>
               </div>
               <div className="flex justify-between py-1">
                 <span>Required Approver Roles:</span>
-                <span className="text-[#17191c] font-medium">approver, admin</span>
+                <span className="text-[#192319] font-medium">approver, admin</span>
               </div>
             </div>
           </div>
 
           <Link
             href="/dashboard/policies"
-            className="text-[13px] text-[#17191c] font-medium flex items-center justify-between p-3 rounded-xl bg-white border border-[#ececec] hover:bg-[#f2f2f3] transition-colors"
+            className="text-[13px] text-[#192319] font-medium flex items-center justify-between p-3 rounded-xl bg-white border border-[#DCDCD7] hover:bg-[#F0F0EC] transition-colors"
           >
             <span>Configure Policy Rules</span>
-            <ChevronRight className="w-4 h-4 text-[#777b86]" />
+            <ChevronRight className="w-4 h-4 text-[#2D372D]" />
           </Link>
         </div>
       </div>
 
       {/* Recent Executions Table */}
-      <div className="bg-white rounded-2xl border border-[#ececec] overflow-hidden shadow-sm">
-        <div className="p-6 border-b border-[#ececec] flex items-center justify-between">
+      <div className="bg-white rounded-2xl border border-[#DCDCD7] overflow-hidden shadow-sm">
+        <div className="p-6 border-b border-[#DCDCD7] flex items-center justify-between">
           <div className="space-y-1">
-            <h3 className="font-display text-[22px] text-[#17191c]">Recent Agent Executions</h3>
-            <p className="text-[13px] text-[#777b86]">
+            <h3 className="font-display text-[22px] text-[#192319]">Recent Agent Executions</h3>
+            <p className="text-[13px] text-[#2D372D]">
               {IS_ENTERPRISE
                 ? 'Deterministic progression: Planning → Policy Gate → Human Sign-off → Sandboxed Tool → Cryptographic Anchor.'
                 : 'Deterministic progression: Planning → Policy Gate → Human Sign-off → Sandboxed Tool → Mock Anchor.'}
@@ -321,7 +321,7 @@ export default function DashboardOverview() {
           </div>
           <Link
             href="/dashboard/executions"
-            className="text-[13px] text-[#17191c] font-medium hover:underline flex items-center gap-1"
+            className="text-[13px] text-[#192319] font-medium hover:underline flex items-center gap-1"
           >
             <span>View All Executions</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -331,7 +331,7 @@ export default function DashboardOverview() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-[#ececec] bg-[#fafafb] text-[#979799] font-medium">
+              <tr className="border-b border-[#DCDCD7] bg-[#F8F8F8] text-[#6D7344] font-medium">
                 <th className="px-6 py-3.5">Execution ID</th>
                 <th className="px-6 py-3.5">Invoice / Vendor</th>
                 <th className="px-6 py-3.5">Amount (IDR)</th>
@@ -341,19 +341,23 @@ export default function DashboardOverview() {
                 <th className="px-6 py-3.5 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#ececec]">
+            <tbody className="divide-y divide-[#DCDCD7]">
               {executions.slice(0, 6).map((item) => {
                 return (
-                  <tr key={item.id} className="hover:bg-[#fafafb] transition-colors">
-                    <td className="px-6 py-4 font-mono font-medium text-[#17191c]">
+                  <tr key={item.id} className="hover:bg-[#F8F8F8] transition-colors">
+                    <td className="px-6 py-4 font-mono font-medium text-[#192319]">
                       {item.id}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="font-medium text-[#17191c]">{item.payload.invoiceId}</div>
-                      <div className="text-[12px] text-[#777b86]">{item.payload.vendor}</div>
+                      <div className="font-medium text-[#192319]">{item.payload.invoiceId}</div>
+                      <div className="text-[12px] text-[#2D372D]">
+                        {item.payload.vendor} &bull; <span className="font-mono text-[11px]">{item.agentName}</span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-[#17191c]">
-                      Rp {item.payload.amountIdr.toLocaleString()}
+                    <td className="px-6 py-4 font-mono text-[#192319]">
+                      {item.payload.amountIdr > 0
+                        ? `Rp ${item.payload.amountIdr.toLocaleString()}`
+                        : 'Non-monetary'}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
@@ -393,7 +397,7 @@ export default function DashboardOverview() {
                       ) : item.status === 'WAITING_APPROVAL' ? (
                         <span className="text-[12px] text-amber-800">Pending sign-off</span>
                       ) : (
-                        <span className="text-[12px] text-[#979799]">No receipt (Denied)</span>
+                        <span className="text-[12px] text-[#6D7344]">No receipt (Denied)</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -407,12 +411,12 @@ export default function DashboardOverview() {
                       ) : item.receipt ? (
                         <Link
                           href="/dashboard/trust"
-                          className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#f2f2f3] text-[#17191c] text-[12px] font-medium hover:bg-[#e5e5e6] transition-colors"
+                          className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#F0F0EC] text-[#192319] text-[12px] font-medium hover:bg-[#DCDCD7] transition-colors"
                         >
                           Inspect Receipt
                         </Link>
                       ) : (
-                        <span className="text-[12px] text-[#979799]">-</span>
+                        <span className="text-[12px] text-[#6D7344]">-</span>
                       )}
                     </td>
                   </tr>

@@ -1,45 +1,44 @@
 import type { Metadata } from "next";
-import { Newsreader, Inter, Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import {
+  Newsreader,
+  Atkinson_Hyperlegible,
+  Plus_Jakarta_Sans,
+  Geist_Mono,
+} from "next/font/google";
 import "./globals.css";
 
-const signifierFont = Newsreader({
+const editorialSerif = Newsreader({
   subsets: ["latin"],
   style: ["normal", "italic"],
-  weight: ["400"],
-  variable: "--font-signifier",
-  display: "swap",
-});
-
-const sohneFont = Inter({
-  subsets: ["latin"],
   weight: ["400", "500", "600"],
-  variable: "--font-sohne",
+  variable: "--font-editorial",
   display: "swap",
 });
 
-const jakartaFont = Plus_Jakarta_Sans({
+const hyperlegibleSans = Atkinson_Hyperlegible({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-hyperlegible",
+  display: "swap",
+});
+
+const jakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-jakarta",
   display: "swap",
 });
 
-const geistFont = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist",
-  display: "swap",
-});
-
-const geistMonoFont = Geist_Mono({
+const geistMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-geist-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "VERITAS AI — Enterprise AI Governance & Trust Infrastructure",
+  title: "VERITAS AI — Control Before Action | Enterprise AI Governance",
   description:
-    "An AI governance demo for policy checks before action, human approval, and controlled outbound data.",
+    "Deterministic runtime governance harness for enterprise AI agents: policy checks before action, human separation-of-duties, and Ed25519 cryptographic receipts.",
 };
 
 export default function RootLayout({
@@ -50,9 +49,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${signifierFont.variable} ${sohneFont.variable} ${jakartaFont.variable} ${geistFont.variable} ${geistMonoFont.variable} h-full antialiased`}
+      className={`${editorialSerif.variable} ${hyperlegibleSans.variable} ${jakartaSans.variable} ${geistMono.variable} h-full antialiased scroll-smooth`}
     >
-      <body className="min-h-full flex flex-col bg-white text-[#17191c]">
+      <body className="min-h-full flex flex-col bg-[#F0F0EC] text-[#192319] selection:bg-[#ABE082] selection:text-[#192319]">
         {children}
       </body>
     </html>

@@ -58,7 +58,7 @@ interface ExecutionView {
   project_id: string;
   agent_id: string;
   task_type: string;
-  payload?: { invoice_id?: string; amount_idr?: number; vendor?: string; description?: string };
+  payload?: Record<string, unknown>;
   proposal: { tool: string; arguments: Record<string, unknown> } | null;
   decision: string | null;
   reason_code: string | null;
@@ -102,7 +102,12 @@ interface PolicyView {
 interface AgentView {
   agent_id: string;
   name: string;
-  status: 'OPERATIONAL' | 'PLANNED';
+  version?: string;
+  description?: string;
+  status: 'OPERATIONAL' | 'DISABLED' | 'PLANNED';
+  enabled?: boolean;
+  default_task_type?: string;
+  task_types?: string[];
   allowed_tools: string[];
   policy_version: number;
   executions: number;
@@ -284,11 +289,32 @@ export function getAgents() {
   return request<{ agents: AgentView[] }>('/api/v1/agents');
 }
 
-export async function createTask(payload: Record<string, unknown>, idempotencyKey: string) {
+export function setAgentEnabled(agentId: string, enabled: boolean) {
+  return request<{ agent_id: string; enabled: boolean; status: string }>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    },
+  );
+}
+
+export async function createTask(
+  payload: Record<string, unknown>,
+  idempotencyKey: string,
+  options?: { agentId?: string; taskType?: string },
+) {
+  const body: Record<string, unknown> = {
+    task_type: options?.taskType || 'invoice_review',
+    payload,
+  };
+  if (options?.agentId) {
+    body.agent_id = options.agentId;
+  }
   const data = await request<ExecutionView>('/api/v1/tasks', {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ task_type: 'invoice_review', payload }),
+    body: JSON.stringify(body),
   });
   return IS_ENTERPRISE ? normalizeExecutionView(data) : data;
 }
@@ -387,6 +413,40 @@ export function setToolEnabled(toolName: string, enabled: boolean) {
   });
 }
 
+export interface VendorView {
+  id: string;
+  tenant_id: string;
+  vendor_code: string;
+  name: string;
+  tax_id: string | null;
+  status: 'active' | 'blocked';
+  created_at: string;
+  updated_at: string;
+}
+
+export function getVendors() {
+  return request<{ vendors: VendorView[] }>('/api/v1/vendors');
+}
+
+export function upsertVendor(payload: {
+  vendor_code: string;
+  name: string;
+  tax_id?: string | null;
+  status?: 'active' | 'blocked';
+}) {
+  return request<VendorView>('/api/v1/vendors', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateVendorStatus(vendorCode: string, status: 'active' | 'blocked') {
+  return request<VendorView>(`/api/v1/vendors/${encodeURIComponent(vendorCode)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
 export function resetDemo() {
   return request<{ status: string; executions: number; receipts: number; pending_approvals: number }>(
     '/api/v1/demo/reset',
@@ -479,19 +539,57 @@ export function mapPolicy(policy: PolicyView): PolicyRule {
   };
 }
 
+export const AGENT_METADATA: Record<string, { name: string; version: string; description: string }> = {
+  'procurement-agent': {
+    name: 'Procurement Agent',
+    version: '1.2.0',
+    description: 'Autonomous purchase order and supplier invoice verification agent with strict policy boundary.',
+  },
+  'finance-risk-agent': {
+    name: 'Finance Risk Agent',
+    version: '1.1.0',
+    description: 'Corporate ledger reconciliation and financial anomaly escalation agent.',
+  },
+  'hr-operations-agent': {
+    name: 'HR Operations Agent',
+    version: '1.0.0',
+    description: 'Employee onboarding, workspace access provisioning, and facility badge governance agent.',
+  },
+  'security-audit-agent': {
+    name: 'Security Audit Agent',
+    version: '1.0.0',
+    description: 'Continuous cloud IAM posture scanning and stale credential revocation agent.',
+  },
+};
+
+export function agentDisplayName(agentId: string | null | undefined): string {
+  const key = (agentId || '').trim();
+  if (!key) return 'Procurement Agent';
+  if (AGENT_METADATA[key]) return AGENT_METADATA[key].name;
+  return personName(key);
+}
+
 export function mapAgents(agents: AgentView[], executions: ExecutionRecord[]): AgentInfo[] {
-  return agents.map((agent) => ({
-    id: agent.agent_id,
-    name: agent.name,
-    version: `policy-v${agent.policy_version}`,
-    description: 'Proposal-only procurement agent; Harness validates and executes.',
-    status: agent.status,
-    allowedTools: agent.allowed_tools,
-    totalExecutions: agent.executions,
-    blockedCount: executions.filter(
-      (exec) => exec.agentId === agent.agent_id && (exec.status === 'DENIED' || exec.status === 'REJECTED'),
-    ).length,
-  }));
+  return agents.map((agent) => {
+    const meta = AGENT_METADATA[agent.agent_id];
+    return {
+      id: agent.agent_id,
+      name: agent.name || meta?.name || agentDisplayName(agent.agent_id),
+      version: agent.version || meta?.version || `policy-v${agent.policy_version}`,
+      description:
+        agent.description ||
+        meta?.description ||
+        'Proposal-only enterprise agent; Harness validates and executes.',
+      status: agent.status,
+      defaultTaskType: agent.default_task_type,
+      taskTypes: agent.task_types,
+      allowedTools: agent.allowed_tools,
+      totalExecutions: agent.executions,
+      blockedCount: executions.filter(
+        (exec) => exec.agentId === agent.agent_id && (exec.status === 'DENIED' || exec.status === 'REJECTED'),
+      ).length,
+    };
+  });
 }
 
 function mapEvents(events: EventView[]): ExecutionEvent[] {
@@ -513,12 +611,13 @@ function mapEvents(events: EventView[]): ExecutionEvent[] {
 function mapReceipt(view: ReceiptView): ExecutionReceipt {
   const body = view.receipt;
   const str = (key: string) => (typeof body[key] === 'string' ? (body[key] as string) : '');
+  const agentId = str('agent_id') || 'procurement-agent';
   return {
     receiptVersion: String(body.version ?? '1'),
     receiptId: str('receipt_id'),
     executionId: str('execution_id'),
-    agentId: str('agent_id'),
-    agentName: 'Procurement Agent',
+    agentId,
+    agentName: agentDisplayName(agentId),
     organizationId: str('organization_id'),
     tool: str('tool'),
     inputDigest: str('input_digest'),
@@ -527,7 +626,7 @@ function mapReceipt(view: ReceiptView): ExecutionReceipt {
     decision: mapDecision(str('decision')),
     actorId: str('actor'),
     actorRole: 'harness',
-    timestampUtc: str('created_at'),
+    timestampUtc: str('timestamp_utc') || str('created_at'),
     outcome: str('outcome') as ExecutionReceipt['outcome'],
     correlationId: str('correlation_id'),
     previousEventHash: str('previous_event_hash'),
@@ -543,20 +642,38 @@ function mapReceipt(view: ReceiptView): ExecutionReceipt {
   };
 }
 
+function firstStr(source: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const val = source[key];
+    if (typeof val === 'string' && val.trim()) return val.trim();
+  }
+  return '';
+}
+
 export function mapExecution(
   view: ExecutionView,
   events: EventView[],
   receipt: ReceiptView | null,
 ): ExecutionRecord {
-  const payload = view.payload || {};
-  const args = view.proposal?.arguments || {};
+  const payload = (view.payload || {}) as Record<string, unknown>;
+  const args = (view.proposal?.arguments || {}) as Record<string, unknown>;
   const arguedAmount = args.amount_idr;
-  const rawVendor =
-    typeof payload.vendor === 'string'
-      ? payload.vendor
-      : typeof args.vendor_id === 'string'
-        ? args.vendor_id
-        : '';
+  const rawVendor = firstStr(payload, ['vendor', 'vendor_id']) || firstStr(args, ['vendor_id']);
+  const refLabel =
+    firstStr(payload, ['invoice_id', 'reference_id', 'employee_id', 'principal_id', 'account_id']) ||
+    firstStr(args, ['invoice_id', 'reference_id', 'employee_id', 'principal_id', 'account_id']) ||
+    view.execution_id;
+  const targetLabel =
+    (rawVendor ? displayVendor(rawVendor) : '') ||
+    firstStr(payload, ['account_code', 'department', 'zone', 'scope', 'token_id', 'severity']) ||
+    firstStr(args, ['account_code', 'department', 'zone', 'scope', 'token_id', 'severity']) ||
+    agentDisplayName(view.agent_id);
+  const descLabel =
+    firstStr(payload, ['description', 'reason']) ||
+    firstStr(args, ['reason']) ||
+    (firstStr(payload, ['access_tier']) ? `Access tier: ${firstStr(payload, ['access_tier'])}` : '');
+  const agentId = view.agent_id || 'procurement-agent';
+  const agentName = agentDisplayName(agentId);
   const decision = mapDecision(view.decision);
   const mappedEvents = mapEvents(events);
   const approvedEvent = events.find((event) => event.type === 'APPROVED');
@@ -587,15 +704,16 @@ export function mapExecution(
   return {
     id: view.execution_id,
     taskId: view.idempotency_key,
-    agentId: view.agent_id,
-    agentName: 'Procurement Agent',
+    agentId,
+    agentName,
     taskType: view.task_type,
-    instruction: `Review supplier invoice ${payload.invoice_id ?? ''} from ${displayVendor(rawVendor)}.`,
+    instruction: `${agentName} · ${view.task_type.replaceAll('_', ' ')} (${refLabel})`,
     payload: {
-      invoiceId: typeof payload.invoice_id === 'string' ? payload.invoice_id : String(args.invoice_id ?? ''),
-      vendor: displayVendor(rawVendor),
+      invoiceId: refLabel,
+      vendor: targetLabel,
       amountIdr: typeof payload.amount_idr === 'number' ? payload.amount_idr : Number(arguedAmount ?? 0),
-      description: typeof payload.description === 'string' ? payload.description : '',
+      description: descLabel,
+      raw: payload,
     },
     status: mapStatus(view.status),
     proposal: view.proposal

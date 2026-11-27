@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { User, AgentInfo, PolicyRule, ExecutionRecord, UserRole, ExecutionStatus, ExecutionEvent } from './types';
 import { DEMO_USERS, INITIAL_AGENTS, INITIAL_POLICY, INITIAL_EXECUTIONS } from './mockData';
 import { canonicalizeJson, computeSha256 } from './crypto';
@@ -18,10 +19,12 @@ interface AppContextType {
   refreshExecutions: () => Promise<void>;
   submitTask: (data: {
     agentId: string;
-    invoiceId: string;
-    vendor: string;
-    amountIdr: number;
+    taskType?: string;
+    invoiceId?: string;
+    vendor?: string;
+    amountIdr?: number;
     description?: string;
+    payload?: Record<string, unknown>;
   }) => Promise<ExecutionRecord>;
   decideApproval: (
     executionId: string,
@@ -65,7 +68,12 @@ const ENTERPRISE_POLICY: PolicyRule = {
   updatedAt: '',
 };
 
+function isUnauthenticatedError(err: unknown): boolean {
+  return err instanceof api.ApiError && err.status === 401;
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User>(() =>
     api.IS_ENTERPRISE ? ENTERPRISE_USER : readStored('veritas_user', DEMO_USERS[0]));
   const [agents, setAgents] = useState<AgentInfo[]>(api.IS_ENTERPRISE ? [] : INITIAL_AGENTS);
@@ -77,7 +85,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const reportEnterpriseError = useCallback((scope: string, err: unknown) => {
     const detail = err instanceof Error ? err.message : String(err);
@@ -94,18 +107,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         reportEnterpriseError(scope, err);
       };
       try {
-        const [meRes, policyRes, execsRes] = await Promise.allSettled([
-          api.getMe(),
+        // Verify session first so unauthenticated visitors are redirected cleanly
+        // without firing parallel requests or spamming console.error on 401.
+        let me: Awaited<ReturnType<typeof api.getMe>> | null = null;
+        try {
+          me = await api.getMe();
+        } catch (err) {
+          if (isUnauthenticatedError(err)) {
+            if (mountedRef.current) setSyncError(null);
+            router.replace('/login');
+            return;
+          }
+          // Identity is authoritative in the backend session. Some enterprise
+          // deployments do not expose /me, so non-401 failures are advisory only.
+          console.warn('[veritas] identity endpoint unavailable; backend session remains authoritative.', err);
+        }
+
+        if (me && mountedRef.current) {
+          setCurrentUser(api.mapUser(me));
+        }
+
+        const [policyRes, execsRes, agentsRes] = await Promise.allSettled([
           api.getPolicy(),
           api.getExecutions(50),
+          api.getAgents(),
         ]);
 
-        // Identity is authoritative in the backend session. Some enterprise
-        // deployments do not expose /me, so this is advisory only.
-        if (meRes.status === 'fulfilled') {
-          if (mountedRef.current) setCurrentUser(api.mapUser(meRes.value));
-        } else {
-          console.warn('[veritas] identity endpoint unavailable; backend session remains authoritative.', meRes.reason);
+        const authFailure = [policyRes, execsRes, agentsRes].find(
+          (res): res is PromiseRejectedResult =>
+            res.status === 'rejected' && isUnauthenticatedError(res.reason),
+        );
+        if (authFailure) {
+          if (mountedRef.current) setSyncError(null);
+          router.replace('/login');
+          return;
         }
 
         if (policyRes.status === 'fulfilled') {
@@ -114,6 +149,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           fail('policy load', policyRes.reason);
         }
 
+        let validExecs: ExecutionRecord[] = [];
         if (execsRes.status === 'fulfilled') {
           const records = await Promise.all(
             execsRes.value.executions.map(async (view) => {
@@ -125,14 +161,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }
             }),
           );
+          validExecs = records.filter((record): record is ExecutionRecord => record !== null);
           if (mountedRef.current) {
-            const valid = records.filter((record): record is ExecutionRecord => record !== null);
-            setExecutions(valid);
-            // No demo agent fixtures in enterprise; the backend owns agents.
-            setAgents(api.mapAgents([], valid));
+            setExecutions(validExecs);
           }
         } else {
           fail('execution load', execsRes.reason);
+        }
+
+        if (agentsRes.status === 'fulfilled') {
+          if (mountedRef.current) {
+            setAgents(api.mapAgents(agentsRes.value.agents, validExecs));
+          }
+        } else {
+          fail('agents load', agentsRes.reason);
         }
         if (mountedRef.current && !failed) setSyncError(null);
       } catch (err) {
@@ -143,9 +185,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     // Demo: local Harness API with the original offline fallback semantics.
     try {
-      const [policyRes, execsRes] = await Promise.all([
+      const [policyRes, execsRes, agentsRes] = await Promise.all([
         api.getPolicy().catch(() => null),
         api.getExecutions(50).catch(() => null),
+        api.getAgents().catch(() => null),
       ]);
       if (!mountedRef.current) return;
 
@@ -153,23 +196,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setPolicy(api.mapPolicy(policyRes));
       }
 
+      let validExecs: ExecutionRecord[] = [];
       if (execsRes && Array.isArray(execsRes.executions) && execsRes.executions.length > 0) {
         const hydrated = await Promise.all(
           execsRes.executions.map((e) => api.hydrateExecution(e).catch(() => null))
         );
-        const valid = hydrated.filter((e): e is ExecutionRecord => e !== null);
-        if (valid.length > 0 && mountedRef.current) {
-          setExecutions(valid);
+        validExecs = hydrated.filter((e): e is ExecutionRecord => e !== null);
+        if (validExecs.length > 0 && mountedRef.current) {
+          setExecutions(validExecs);
         }
-        const agentsRes = await api.getAgents().catch(() => null);
-        if (agentsRes && mountedRef.current) {
-          setAgents(api.mapAgents(agentsRes.agents, valid));
-        }
+      }
+      if (agentsRes && mountedRef.current) {
+        setAgents(api.mapAgents(agentsRes.agents, validExecs));
       }
     } catch {
       // Local backend not reachable, keep local state
     }
-  }, [reportEnterpriseError]);
+  }, [reportEnterpriseError, router]);
 
   useEffect(() => {
     // Defer the async sync so no state is set synchronously in the effect body.
@@ -233,6 +276,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       const mapped = api.mapPolicy(live);
       setPolicy({ ...mapped, name: next.name, updatedAt: new Date().toISOString() });
+      void api.getAgents().then((agentsRes) => {
+        if (mountedRef.current) setAgents(api.mapAgents(agentsRes.agents, executions));
+      }).catch(() => null);
       return;
     } catch (err) {
       if (err instanceof api.ApiError && (err.status === 403 || err.status === 401 || err.status === 422)) {
@@ -254,10 +300,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const submitTask = async (data: {
     agentId: string;
-    invoiceId: string;
-    vendor: string;
-    amountIdr: number;
+    taskType?: string;
+    invoiceId?: string;
+    vendor?: string;
+    amountIdr?: number;
     description?: string;
+    payload?: Record<string, unknown>;
   }): Promise<ExecutionRecord> => {
     if (!api.IS_ENTERPRISE && currentUser.role === 'auditor') {
       throw new api.ApiError(
@@ -267,25 +315,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
-    // Attempt dispatch to real live Harness Gateway
-    try {
-      const idempKey = 'idemp_' + Math.random().toString(36).substring(2, 10);
-      const created = await api.createTask(
-        {
+    const requestPayload: Record<string, unknown> = data.payload
+      ? { ...data.payload }
+      : {
           invoice_id: data.invoiceId,
           amount_idr: data.amountIdr,
           vendor: data.vendor,
           description: data.description,
-        },
-        idempKey,
-      );
+        };
+
+    // Attempt dispatch to real live Harness Gateway
+    try {
+      const idempKey = 'idemp_' + Math.random().toString(36).substring(2, 10);
+      const created = await api.createTask(requestPayload, idempKey, {
+        agentId: data.agentId,
+        taskType: data.taskType,
+      });
       if (created && created.execution_id) {
         const fullRecord = await api.hydrateExecution(created);
-        setExecutions((prev) => [fullRecord, ...prev]);
+        setExecutions((prev) => {
+          const next = [fullRecord, ...prev];
+          void api.getAgents().then((agentsRes) => {
+            if (mountedRef.current) setAgents(api.mapAgents(agentsRes.agents, next));
+          }).catch(() => null);
+          return next;
+        });
         return fullRecord;
       }
     } catch (err) {
-      if (err instanceof api.ApiError && (err.status === 403 || err.status === 401)) {
+      if (err instanceof api.ApiError && (err.status === 403 || err.status === 401 || err.status === 422)) {
         throw err;
       }
       if (api.IS_ENTERPRISE) {
@@ -297,41 +355,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const execId = 'exec_' + Math.random().toString(36).substring(2, 9);
     const now = new Date().toISOString();
-    const isOverLimit = data.amountIdr > policy.maxAutoAmountIdr;
-    const isVendorAllowed = policy.allowedVendors.includes(data.vendor);
+    const amountNum = Number(data.amountIdr ?? requestPayload.amount_idr ?? 0);
+    const vendorStr = String(data.vendor ?? requestPayload.vendor ?? requestPayload.account_code ?? requestPayload.department ?? 'V-ABC');
+    const invoiceStr = String(data.invoiceId ?? requestPayload.invoice_id ?? requestPayload.reference_id ?? requestPayload.employee_id ?? execId);
+    const isOverLimit = amountNum > policy.maxAutoAmountIdr;
+    const isVendorAllowed = data.agentId !== 'procurement-agent' || policy.allowedVendors.includes(vendorStr);
+    const agentName = api.agentDisplayName(data.agentId);
 
     // Initial created record
     const newExec: ExecutionRecord = {
       id: execId,
       taskId: 'task_' + Math.random().toString(36).substring(2, 8),
       agentId: data.agentId,
-      agentName: 'Procurement Agent',
-      taskType: 'invoice_review',
-      instruction: `Review and evaluate supplier invoice ${data.invoiceId} from ${data.vendor} for IDR ${data.amountIdr.toLocaleString()}.`,
+      agentName,
+      taskType: data.taskType || 'invoice_review',
+      instruction: `Execute ${data.taskType || 'invoice_review'} via ${agentName} (${invoiceStr}).`,
       payload: {
-        invoiceId: data.invoiceId,
-        vendor: data.vendor,
-        amountIdr: data.amountIdr,
-        description: data.description || 'Enterprise procurement automated task submission.',
+        invoiceId: invoiceStr,
+        vendor: vendorStr,
+        amountIdr: amountNum,
+        description: data.description || String(requestPayload.description || requestPayload.reason || 'Enterprise automated task submission.'),
+        raw: requestPayload,
       },
       status: isOverLimit || !isVendorAllowed ? 'WAITING_APPROVAL' : 'SUCCEEDED',
       proposal: {
         name: 'approve_invoice',
         arguments: {
-          invoice_id: data.invoiceId,
-          amount_idr: data.amountIdr,
-          vendor: data.vendor,
+          invoice_id: invoiceStr,
+          amount_idr: amountNum,
+          vendor: vendorStr,
         },
         rationale: isOverLimit
-          ? `Invoice amount IDR ${data.amountIdr.toLocaleString()} exceeds automatic limit of IDR ${policy.maxAutoAmountIdr.toLocaleString()}.`
-          : 'Invoice strictly matches contract schedule and is within automatic policy limits.',
+          ? `Amount IDR ${amountNum.toLocaleString()} exceeds automatic limit of IDR ${policy.maxAutoAmountIdr.toLocaleString()}.`
+          : 'Task parameters verified within automatic policy bounds.',
         confidence: 0.99,
       },
       policyResult: {
         decision: isOverLimit || !isVendorAllowed ? 'APPROVAL_REQUIRED' : 'ALLOWED',
         reason: isOverLimit
-          ? `AMOUNT_LIMIT: Amount IDR ${data.amountIdr.toLocaleString()} exceeds automatic limit of IDR ${policy.maxAutoAmountIdr.toLocaleString()}.`
-          : 'POLICY_PERMITTED: Invoice amount within auto-approval ceiling and vendor allowed.',
+          ? `AMOUNT_LIMIT: Amount IDR ${amountNum.toLocaleString()} exceeds automatic limit of IDR ${policy.maxAutoAmountIdr.toLocaleString()}.`
+          : 'POLICY_PERMITTED: Evaluated within automatic policy limits.',
         thresholdIdr: policy.maxAutoAmountIdr,
       },
       events: [
@@ -407,7 +470,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         receiptId: canonicalReceiptObj.receipt_id,
         executionId: execId,
         agentId: data.agentId,
-        agentName: 'Procurement Agent',
+        agentName: agentName,
         organizationId: 'org_nexora_tech',
         tool: 'approve_invoice',
         inputDigest: canonicalReceiptObj.input_digest,
@@ -486,7 +549,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         );
         if (decidedRes?.execution) {
           const fullRecord = await api.hydrateExecution(decidedRes.execution);
-          setExecutions((prev) => prev.map((item) => (item.id === executionId ? fullRecord : item)));
+          setExecutions((prev) => {
+            const next = prev.map((item) => (item.id === executionId ? fullRecord : item));
+            void api.getAgents().then((agentsRes) => {
+              if (mountedRef.current) setAgents(api.mapAgents(agentsRes.agents, next));
+            }).catch(() => null);
+            return next;
+          });
           return;
         }
       } catch (err) {

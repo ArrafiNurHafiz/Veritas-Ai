@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ExecutionReceipt } from '@/lib/types';
-import { verifyReceiptPayload, VerificationResult } from '@/lib/crypto';
+import { verifyReceiptPayload, VerificationResult, canonicalizeJson } from '@/lib/crypto';
 import { IS_ENTERPRISE } from '@/lib/api';
 import {
   ShieldCheck,
@@ -76,10 +76,18 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
 
   const handleTamperToggle = () => {
     if (!isTampered) {
-      const tamperedJson = currentCanonicalJson.replace(
-        'procurement-agent',
-        'procurement-agent-MALICIOUS',
-      );
+      let tamperedJson = currentCanonicalJson;
+      try {
+        const parsed = JSON.parse(currentCanonicalJson) as Record<string, unknown>;
+        if (typeof parsed.agent_id === 'string' && parsed.agent_id) {
+          parsed.agent_id = `${parsed.agent_id}-MALICIOUS`;
+        } else {
+          parsed.agent_id = 'tampered-agent-MALICIOUS';
+        }
+        tamperedJson = canonicalizeJson(parsed);
+      } catch {
+        tamperedJson = `${currentCanonicalJson} `;
+      }
       setCurrentCanonicalJson(tamperedJson);
       setIsTampered(true);
       void handleVerify(tamperedJson, false);
@@ -108,19 +116,19 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-[#ececec] overflow-hidden shadow-sm">
-      <div className="p-6 border-b border-[#ececec] flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#fafafb]">
+    <div className="bg-white rounded-2xl border border-[#DCDCD7] overflow-hidden shadow-sm">
+      <div className="p-6 border-b border-[#DCDCD7] flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#F8F8F8]">
         <div className="space-y-1">
           <div className="flex items-center gap-2.5">
-            <Fingerprint className="w-5 h-5 text-[#17191c]" />
-            <h3 className="font-display text-[22px] text-[#17191c]">Execution Receipt</h3>
-            <span className="font-mono text-[12px] px-2.5 py-0.5 rounded-full bg-[#f2f2f3] text-[#777b86] border border-[#ececec]">
+            <Fingerprint className="w-5 h-5 text-[#192319]" />
+            <h3 className="font-display text-[22px] text-[#192319]">Execution Receipt</h3>
+            <span className="font-mono text-[12px] px-2.5 py-0.5 rounded-full bg-[#F0F0EC] text-[#2D372D] border border-[#DCDCD7]">
               {receipt.receiptId}
             </span>
           </div>
-          <p className="text-[13px] text-[#777b86]">
+          <p className="text-[13px] text-[#2D372D]">
             Canonical RFC 8785 evidence signed by Ed25519 key ID{' '}
-            <code className="font-mono text-[#17191c]">{receipt.keyId}</code>
+            <code className="font-mono text-[#192319]">{receipt.keyId}</code>
           </p>
         </div>
 
@@ -142,7 +150,7 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
           <button
             onClick={() => void handleVerify(currentCanonicalJson, !isTampered)}
             disabled={isVerifying}
-            className="p-2 rounded-full hover:bg-white text-[#777b86] hover:text-[#17191c] border border-transparent hover:border-[#ececec] transition-all"
+            className="p-2 rounded-full hover:bg-white text-[#2D372D] hover:text-[#192319] border border-transparent hover:border-[#DCDCD7] transition-all"
             title="Re-run verification"
           >
             <RefreshCw className={`w-4 h-4 ${isVerifying ? 'animate-spin' : ''}`} />
@@ -154,11 +162,11 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
         className={`p-4 border-b text-[13px] flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
           isTampered
             ? 'bg-amber-50/80 border-amber-200 text-amber-900'
-            : 'bg-[#f2f2f3]/50 border-[#ececec] text-[#777b86]'
+            : 'bg-[#F0F0EC]/50 border-[#DCDCD7] text-[#2D372D]'
         }`}
       >
         <div className="flex items-center gap-2">
-          <AlertTriangle className={`w-4 h-4 ${isTampered ? 'text-amber-600' : 'text-[#777b86]'}`} />
+          <AlertTriangle className={`w-4 h-4 ${isTampered ? 'text-amber-600' : 'text-[#2D372D]'}`} />
           <span>
             {isTampered
               ? 'Tamper Active: the payload was altered. Integrity checks must reject it.'
@@ -170,17 +178,17 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
           className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all ${
             isTampered
               ? 'bg-amber-600 text-white hover:bg-amber-700'
-              : 'bg-white border border-[#17191c] text-[#17191c] hover:bg-[#17191c] hover:text-white'
+              : 'bg-white border border-[#192319] text-[#192319] hover:bg-[#192319] hover:text-white'
           }`}
         >
           {isTampered ? 'Restore Original Evidence' : 'Simulate Payload Tampering'}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#ececec] border-b border-[#ececec]">
+      <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#DCDCD7] border-b border-[#DCDCD7]">
         <div className="p-4 space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#979799]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6D7344]">
               1. SHA-256 Digest
             </span>
             {verification?.hashMatches ? (
@@ -193,14 +201,14 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
               </span>
             )}
           </div>
-          <p className="font-mono text-[11px] text-[#17191c] truncate" title={verification?.computedHash}>
+          <p className="font-mono text-[11px] text-[#192319] truncate" title={verification?.computedHash}>
             {verification?.computedHash || receipt.receiptDigest}
           </p>
         </div>
 
         <div className="p-4 space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#979799]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6D7344]">
               2. Ed25519 Signature
             </span>
             {verification?.signatureValid ? (
@@ -213,14 +221,14 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
               </span>
             )}
           </div>
-          <p className="font-mono text-[11px] text-[#17191c] truncate" title={receipt.signature}>
+          <p className="font-mono text-[11px] text-[#192319] truncate" title={receipt.signature}>
             {receipt.signature}
           </p>
         </div>
 
         <div className="p-4 space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#979799]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6D7344]">
               {IS_ENTERPRISE ? '3. Cryptographic Anchor' : '3. Local Mock Anchor'}
             </span>
             <span
@@ -231,7 +239,7 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
               {anchorStatus || 'UNKNOWN'}
             </span>
           </div>
-          <p className="font-mono text-[11px] text-[#17191c] truncate" title={receipt.anchor.txHash}>
+          <p className="font-mono text-[11px] text-[#192319] truncate" title={receipt.anchor.txHash}>
             Tx: {receipt.anchor.txHash || 'not anchored'}
           </p>
         </div>
@@ -239,29 +247,29 @@ export default function ReceiptViewer({ receipt }: ReceiptViewerProps) {
 
       <div className="p-6 space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[13px] font-medium text-[#17191c]">
-            <FileCode className="w-4 h-4 text-[#777b86]" />
+          <div className="flex items-center gap-2 text-[13px] font-medium text-[#192319]">
+            <FileCode className="w-4 h-4 text-[#2D372D]" />
             <span>Canonical JSON Payload (RFC 8785 format)</span>
           </div>
           <button
             onClick={copyToClipboard}
-            className="flex items-center gap-1.5 text-[12px] text-[#777b86] hover:text-[#17191c] px-2.5 py-1 rounded-md hover:bg-[#f2f2f3] transition-colors"
+            className="flex items-center gap-1.5 text-[12px] text-[#2D372D] hover:text-[#192319] px-2.5 py-1 rounded-md hover:bg-[#F0F0EC] transition-colors"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{copied ? 'Copied' : 'Copy Canonical JSON'}</span>
           </button>
         </div>
 
-        <pre className="p-4 rounded-xl bg-[#fafafb] border border-[#ececec] text-[12px] font-mono text-[#17191c] overflow-x-auto leading-relaxed whitespace-pre-wrap break-all">
+        <pre className="p-4 rounded-xl bg-[#F8F8F8] border border-[#DCDCD7] text-[12px] font-mono text-[#192319] overflow-x-auto leading-relaxed whitespace-pre-wrap break-all">
           {currentCanonicalJson}
         </pre>
 
         {verification && (
-          <div className="mt-4 p-3.5 rounded-xl bg-[#f2f2f3] text-[12px] text-[#777b86] space-y-1">
-            <span className="font-semibold text-[#17191c] block">Audit Diagnostics:</span>
+          <div className="mt-4 p-3.5 rounded-xl bg-[#F0F0EC] text-[12px] text-[#2D372D] space-y-1">
+            <span className="font-semibold text-[#192319] block">Audit Diagnostics:</span>
             {verification.details.map((msg, i) => (
               <p key={i} className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#17191c]"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#192319]"></span>
                 {msg}
               </p>
             ))}

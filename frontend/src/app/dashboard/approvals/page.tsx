@@ -62,13 +62,13 @@ export default function ApprovalsPage() {
     <div className="space-y-8">
       {/* Header */}
       <div className="space-y-1.5">
-        <span className="text-[12px] font-semibold text-[#979799] uppercase tracking-wider">
+        <span className="text-[12px] font-semibold text-[#6D7344] uppercase tracking-wider">
           Governance Gate
         </span>
-        <h1 className="font-display text-[44px] text-[#17191c] leading-[1.1] tracking-[-0.66px]">
+        <h1 className="font-display text-[44px] text-[#192319] leading-[1.1] tracking-[-0.66px]">
           Human-in-the-Loop Approval Center
         </h1>
-        <p className="text-[16px] text-[#777b86]">
+        <p className="text-[16px] text-[#2D372D]">
           Review and authorize high-value agent actions exceeding automatic threshold of Rp {policy.maxAutoAmountIdr.toLocaleString()}.
         </p>
       </div>
@@ -111,19 +111,19 @@ export default function ApprovalsPage() {
       {/* Pending Items Queue */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-display text-[22px] text-[#17191c]">
+          <h3 className="font-display text-[22px] text-[#192319]">
             Pending Approvals ({pendingList.length})
           </h3>
-          <span className="text-[12px] text-[#777b86]">
+          <span className="text-[12px] text-[#2D372D]">
             Strict timeout and replay prevention enforced
           </span>
         </div>
 
         {pendingList.length === 0 ? (
-          <div className="bg-[#fafafb] rounded-2xl p-10 border border-[#ececec] text-center space-y-2">
+          <div className="bg-[#F8F8F8] rounded-2xl p-10 border border-[#DCDCD7] text-center space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-            <h4 className="font-display text-[18px] text-[#17191c]">No Pending Invoices</h4>
-            <p className="text-[13px] text-[#777b86]">
+            <h4 className="font-display text-[18px] text-[#192319]">No Pending Invoices</h4>
+            <p className="text-[13px] text-[#2D372D]">
               All high-value agent actions have been resolved.
             </p>
           </div>
@@ -132,32 +132,34 @@ export default function ApprovalsPage() {
             {pendingList.map((item) => (
               <div
                 key={item.id}
-                className="bg-white rounded-2xl p-6 border border-[#ececec] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6"
+                className="bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6"
               >
                 <div className="space-y-2 max-w-xl">
                   <div className="flex items-center gap-2.5">
-                    <span className="font-mono text-[12px] px-2.5 py-0.5 rounded-full bg-[#f2f2f3] text-[#17191c] font-medium border border-[#ececec]">
+                    <span className="font-mono text-[12px] px-2.5 py-0.5 rounded-full bg-[#F0F0EC] text-[#192319] font-medium border border-[#DCDCD7]">
                       {item.id}
                     </span>
                     <span className="text-[12px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-medium">
                       {item.policyResult?.decision}
                     </span>
-                    <span className="text-[12px] text-[#979799]">
+                    <span className="text-[12px] text-[#6D7344]">
                       Requested by {item.agentName}
                     </span>
                   </div>
 
                   <div className="space-y-1">
-                    <div className="text-[18px] font-semibold text-[#17191c] flex items-center gap-3">
+                    <div className="text-[18px] font-semibold text-[#192319] flex items-center gap-3">
                       <span>{item.payload.invoiceId}</span>
-                      <span className="text-[#979799] font-normal">&bull;</span>
+                      <span className="text-[#6D7344] font-normal">&bull;</span>
                       <span>{item.payload.vendor}</span>
-                      <span className="text-[#979799] font-normal">&bull;</span>
+                      <span className="text-[#6D7344] font-normal">&bull;</span>
                       <span className="font-mono text-emerald-800">
-                        Rp {item.payload.amountIdr.toLocaleString()}
+                        {item.payload.amountIdr > 0
+                          ? `Rp ${item.payload.amountIdr.toLocaleString()}`
+                          : 'Non-monetary'}
                       </span>
                     </div>
-                    <p className="text-[13px] text-[#777b86]">{item.payload.description}</p>
+                    <p className="text-[13px] text-[#2D372D]">{item.payload.description}</p>
                   </div>
 
                   <div className="text-[12px] text-amber-900 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/60">
@@ -183,46 +185,48 @@ export default function ApprovalsPage() {
       {/* Decision Review Modal */}
       {selectedExec && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-[24px] max-w-xl w-full p-6 shadow-2xl border border-[#ececec] space-y-5 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between border-b border-[#ececec] pb-4">
+          <div className="bg-white rounded-[24px] max-w-xl w-full p-6 shadow-2xl border border-[#DCDCD7] space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between border-b border-[#DCDCD7] pb-4">
               <div>
-                <span className="text-[11px] font-semibold text-[#979799] uppercase tracking-wider">
+                <span className="text-[11px] font-semibold text-[#6D7344] uppercase tracking-wider">
                   Reviewing Execution Authorization
                 </span>
-                <h3 className="font-display text-[22px] text-[#17191c]">
-                  Invoice {selectedExec.payload.invoiceId}
+                <h3 className="font-display text-[22px] text-[#192319]">
+                  {selectedExec.agentName} &bull; {selectedExec.payload.invoiceId}
                 </h3>
               </div>
               <button
                 onClick={() => setSelectedExec(null)}
-                className="text-[#777b86] hover:text-[#17191c] text-[18px]"
+                className="text-[#2D372D] hover:text-[#192319] text-[18px]"
               >
                 &times;
               </button>
             </div>
 
             <div className="space-y-3 text-[13px]">
-              <div className="grid grid-cols-2 gap-3 p-4 bg-[#fafafb] rounded-xl border border-[#ececec]">
+              <div className="grid grid-cols-2 gap-3 p-4 bg-[#F8F8F8] rounded-xl border border-[#DCDCD7]">
                 <div>
-                  <span className="text-[#979799] block text-[11px] uppercase">Vendor</span>
-                  <span className="font-medium text-[#17191c]">{selectedExec.payload.vendor}</span>
+                  <span className="text-[#6D7344] block text-[11px] uppercase">Vendor</span>
+                  <span className="font-medium text-[#192319]">{selectedExec.payload.vendor}</span>
                 </div>
                 <div>
-                  <span className="text-[#979799] block text-[11px] uppercase">Amount</span>
+                  <span className="text-[#6D7344] block text-[11px] uppercase">Amount / Scope</span>
                   <span className="font-mono font-medium text-emerald-800 text-[14px]">
-                    Rp {selectedExec.payload.amountIdr.toLocaleString()}
+                    {selectedExec.payload.amountIdr > 0
+                      ? `Rp ${selectedExec.payload.amountIdr.toLocaleString()}`
+                      : 'Non-monetary gate'}
                   </span>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-[#979799] block text-[11px] uppercase">Agent Tool Proposal</span>
-                  <span className="font-mono text-[#17191c]">
-                    {selectedExec.proposal?.name}(invoice_id: &quot;{selectedExec.payload.invoiceId}&quot;)
+                  <span className="text-[#6D7344] block text-[11px] uppercase">Agent Tool Proposal</span>
+                  <span className="font-mono text-[#192319] break-all">
+                    {selectedExec.proposal?.name}({JSON.stringify(selectedExec.proposal?.arguments || {})})
                   </span>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-[#17191c]">
+                <label className="text-[13px] font-medium text-[#192319]">
                   Signer Reason / Audit Note
                 </label>
                 <textarea
@@ -230,7 +234,7 @@ export default function ApprovalsPage() {
                   value={decisionReason}
                   onChange={(e) => setDecisionReason(e.target.value)}
                   placeholder="e.g. Verified against supplier contract schedule and Q4 budget allocation."
-                  className="w-full bg-[#fafafb] border border-[#ececec] rounded-xl p-3 text-[13px] text-[#17191c] focus:outline-none focus:border-[#17191c]"
+                  className="w-full bg-[#F8F8F8] border border-[#DCDCD7] rounded-xl p-3 text-[13px] text-[#192319] focus:outline-none focus:border-[#192319]"
                 />
               </div>
 
@@ -241,20 +245,20 @@ export default function ApprovalsPage() {
                 </div>
               )}
 
-              <div className="text-[12px] text-[#777b86] italic">
+              <div className="text-[12px] text-[#2D372D] italic">
                 {IS_ENTERPRISE ? (
                   <>
-                    * Approval will execute <code className="font-mono">approve_invoice</code> via the Harness adapter and issue a signed Ed25519 receipt queued for anchoring.
+                    * Approval will execute <code className="font-mono">{selectedExec.proposal?.name || 'approve_invoice'}</code> via the Harness adapter and issue a signed Ed25519 receipt queued for anchoring.
                   </>
                 ) : (
                   <>
-                    * Approval will invoke the simulated <code className="font-mono">approve_invoice</code> tool in the Harness and issue a signed Ed25519 receipt with a local mock anchor.
+                    * Approval will invoke the simulated <code className="font-mono">{selectedExec.proposal?.name || 'approve_invoice'}</code> tool in the Harness and issue a signed Ed25519 receipt with a local mock anchor.
                   </>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#ececec]">
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#DCDCD7]">
               <button
                 type="button"
                 onClick={() => setSelectedExec(null)}
@@ -268,7 +272,7 @@ export default function ApprovalsPage() {
                 onClick={() => handleDecision('REJECTED')}
                 className="px-5 py-2 rounded-full border border-rose-300 text-rose-700 hover:bg-rose-50 text-[13px] font-medium transition-colors"
               >
-                Reject Invoice
+                Reject Action
               </button>
               <button
                 type="button"
@@ -284,14 +288,14 @@ export default function ApprovalsPage() {
       )}
 
       {/* Resolved History Table */}
-      <div className="space-y-3 pt-6 border-t border-[#ececec]">
-        <h3 className="font-display text-[22px] text-[#17191c]">
+      <div className="space-y-3 pt-6 border-t border-[#DCDCD7]">
+        <h3 className="font-display text-[22px] text-[#192319]">
           Resolved Approval History ({resolvedList.length})
         </h3>
-        <div className="bg-white rounded-2xl border border-[#ececec] overflow-hidden shadow-sm">
+        <div className="bg-white rounded-2xl border border-[#DCDCD7] overflow-hidden shadow-sm">
           <table className="w-full text-left border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-[#ececec] bg-[#fafafb] text-[#979799]">
+              <tr className="border-b border-[#DCDCD7] bg-[#F8F8F8] text-[#6D7344]">
                 <th className="px-6 py-3.5">Execution</th>
                 <th className="px-6 py-3.5">Invoice / Vendor</th>
                 <th className="px-6 py-3.5">Amount</th>
@@ -300,14 +304,18 @@ export default function ApprovalsPage() {
                 <th className="px-6 py-3.5">Audit Reason</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#ececec]">
+            <tbody className="divide-y divide-[#DCDCD7]">
               {resolvedList.map((item) => (
-                <tr key={item.id} className="hover:bg-[#fafafb]">
-                  <td className="px-6 py-4 font-mono font-medium text-[#17191c]">{item.id}</td>
+                <tr key={item.id} className="hover:bg-[#F8F8F8]">
+                  <td className="px-6 py-4 font-mono font-medium text-[#192319]">{item.id}</td>
                   <td className="px-6 py-4">
-                    <span className="font-medium text-[#17191c]">{item.payload.invoiceId}</span> &bull; {item.payload.vendor}
+                    <span className="font-medium text-[#192319]">{item.payload.invoiceId}</span> &bull; {item.payload.vendor}
                   </td>
-                  <td className="px-6 py-4 font-mono">Rp {item.payload.amountIdr.toLocaleString()}</td>
+                  <td className="px-6 py-4 font-mono">
+                    {item.payload.amountIdr > 0
+                      ? `Rp ${item.payload.amountIdr.toLocaleString()}`
+                      : 'Non-monetary'}
+                  </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
                       item.approval?.status === 'APPROVED'
@@ -318,10 +326,10 @@ export default function ApprovalsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="font-medium text-[#17191c]">{item.approval?.decidedBy}</span>
-                    <span className="text-[#979799] text-[11px] block">{item.approval?.decidedRole}</span>
+                    <span className="font-medium text-[#192319]">{item.approval?.decidedBy}</span>
+                    <span className="text-[#6D7344] text-[11px] block">{item.approval?.decidedRole}</span>
                   </td>
-                  <td className="px-6 py-4 text-[#777b86] max-w-xs truncate" title={item.approval?.reason}>
+                  <td className="px-6 py-4 text-[#2D372D] max-w-xs truncate" title={item.approval?.reason}>
                     {item.approval?.reason || '-'}
                   </td>
                 </tr>

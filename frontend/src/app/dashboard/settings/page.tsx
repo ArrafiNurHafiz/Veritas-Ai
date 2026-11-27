@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function SettingsPage() {
-  const { currentUser } = useApp();
+  const { currentUser, refreshExecutions } = useApp();
   const isAdmin = currentUser.role === 'admin';
 
   const [users, setUsers] = useState<api.TenantUserView[]>([]);
@@ -99,6 +99,7 @@ export default function SettingsPage() {
     try {
       const updated = await api.setToolEnabled(toolName, !currentEnabled);
       setTools((prev) => prev.map((t) => (t.tool_name === toolName ? updated : t)));
+      await refreshExecutions();
       setFeedback(`Tool "${updated.tool_name}" is now ${updated.enabled ? 'ENABLED' : 'DISABLED'}.`);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to toggle tool.');
@@ -109,13 +110,13 @@ export default function SettingsPage() {
     <div className="space-y-8">
       {/* Header */}
       <div className="space-y-1.5">
-        <span className="text-[12px] font-semibold text-[#979799] uppercase tracking-wider">
+        <span className="text-[12px] font-semibold text-[#6D7344] uppercase tracking-wider">
           Enterprise Governance
         </span>
-        <h1 className="font-display text-[44px] text-[#17191c] leading-[1.1] tracking-[-0.66px]">
+        <h1 className="font-display text-[44px] text-[#192319] leading-[1.1] tracking-[-0.66px]">
           Organization Settings
         </h1>
-        <p className="text-[16px] text-[#777b86]">
+        <p className="text-[16px] text-[#2D372D]">
           Manage tenant identity, cryptographic signer credentials, tool registry, and team access.
         </p>
       </div>
@@ -136,35 +137,35 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Tenant Profile */}
-        <div className="bg-white rounded-2xl p-6 border border-[#ececec] shadow-sm space-y-5">
+        <div className="bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm space-y-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#f2f2f3] flex items-center justify-center text-[#17191c]">
+            <div className="w-10 h-10 rounded-full bg-[#F0F0EC] flex items-center justify-center text-[#192319]">
               <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-display text-[20px] text-[#17191c]">Tenant Organization</h3>
-              <p className="text-[12px] text-[#777b86]">
+              <h3 className="font-display text-[20px] text-[#192319]">Tenant Organization</h3>
+              <p className="text-[12px] text-[#2D372D]">
                 {api.IS_ENTERPRISE ? 'Production tenant boundary' : 'Fictional enterprise sandbox configuration'}
               </p>
             </div>
           </div>
 
           <div className="space-y-3 text-[13px]">
-            <div className="flex justify-between py-2 border-b border-[#ececec]">
-              <span className="text-[#777b86]">Organization Name:</span>
-              <strong className="text-[#17191c]">{currentUser.organizationName || currentUser.organizationId}</strong>
+            <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+              <span className="text-[#2D372D]">Organization Name:</span>
+              <strong className="text-[#192319]">{currentUser.organizationName || currentUser.organizationId}</strong>
             </div>
-            <div className="flex justify-between py-2 border-b border-[#ececec]">
-              <span className="text-[#777b86]">Tenant ID:</span>
-              <span className="font-mono text-[#17191c]">{currentUser.organizationId}</span>
+            <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+              <span className="text-[#2D372D]">Tenant ID:</span>
+              <span className="font-mono text-[#192319]">{currentUser.organizationId}</span>
             </div>
-            <div className="flex justify-between py-2 border-b border-[#ececec]">
-              <span className="text-[#777b86]">Authenticated Email:</span>
-              <span className="font-mono text-[#17191c]">{currentUser.email || 'session-identity'}</span>
+            <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+              <span className="text-[#2D372D]">Authenticated Email:</span>
+              <span className="font-mono text-[#192319]">{currentUser.email || 'session-identity'}</span>
             </div>
             <div className="flex justify-between py-2">
-              <span className="text-[#777b86]">Current Session:</span>
-              <span className="font-medium text-[#17191c]">
+              <span className="text-[#2D372D]">Current Session:</span>
+              <span className="font-medium text-[#192319]">
                 {currentUser.name} ({currentUser.role})
               </span>
             </div>
@@ -172,50 +173,50 @@ export default function SettingsPage() {
         </div>
 
         {/* Cryptographic Key Store */}
-        <div className="bg-white rounded-2xl p-6 border border-[#ececec] shadow-sm space-y-5">
+        <div className="bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm space-y-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#f2f2f3] flex items-center justify-center text-[#17191c]">
+            <div className="w-10 h-10 rounded-full bg-[#F0F0EC] flex items-center justify-center text-[#192319]">
               <Key className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-display text-[20px] text-[#17191c]">Harness Signer Key</h3>
-              <p className="text-[12px] text-[#777b86]">Ed25519 receipt signing & canonical verification</p>
+              <h3 className="font-display text-[20px] text-[#192319]">Harness Signer Key</h3>
+              <p className="text-[12px] text-[#2D372D]">Ed25519 receipt signing & canonical verification</p>
             </div>
           </div>
 
           <div className="space-y-3 text-[13px]">
-            <div className="flex justify-between py-2 border-b border-[#ececec]">
-              <span className="text-[#777b86]">Algorithm:</span>
-              <span className="font-mono text-[#17191c]">Ed25519 (RFC 8032)</span>
+            <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+              <span className="text-[#2D372D]">Algorithm:</span>
+              <span className="font-mono text-[#192319]">Ed25519 (RFC 8032)</span>
             </div>
-            <div className="flex justify-between py-2 border-b border-[#ececec]">
-              <span className="text-[#777b86]">Canonicalization:</span>
-              <span className="font-mono text-[#17191c]">RFC 8785 JCS</span>
+            <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+              <span className="text-[#2D372D]">Canonicalization:</span>
+              <span className="font-mono text-[#192319]">RFC 8785 JCS</span>
             </div>
-            <div className="flex justify-between py-2 border-b border-[#ececec]">
-              <span className="text-[#777b86]">Session Backend:</span>
-              <span className="font-mono text-[#17191c]">
+            <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+              <span className="text-[#2D372D]">Session Backend:</span>
+              <span className="font-mono text-[#192319]">
                 {api.IS_ENTERPRISE ? 'PostgreSQL + HttpOnly + CSRF' : 'Local Harness Store'}
               </span>
             </div>
             <div className="flex justify-between py-2">
-              <span className="text-[#777b86]">Storage Location:</span>
+              <span className="text-[#2D372D]">Storage Location:</span>
               <span className="text-emerald-700 font-medium">Server Env / Vault (Never in Git)</span>
             </div>
           </div>
         </div>
 
         {/* Tool Registry Controls (Enterprise) or Anchor Status */}
-        <div className="bg-white rounded-2xl p-6 border border-[#ececec] shadow-sm space-y-5">
+        <div className="bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm space-y-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#f2f2f3] flex items-center justify-center text-[#17191c]">
+            <div className="w-10 h-10 rounded-full bg-[#F0F0EC] flex items-center justify-center text-[#192319]">
               {api.IS_ENTERPRISE ? <Wrench className="w-5 h-5" /> : <Server className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="font-display text-[20px] text-[#17191c]">
+              <h3 className="font-display text-[20px] text-[#192319]">
                 {api.IS_ENTERPRISE ? 'Tenant Tool Registry' : 'Local Mock Anchor'}
               </h3>
-              <p className="text-[12px] text-[#777b86]">
+              <p className="text-[12px] text-[#2D372D]">
                 {api.IS_ENTERPRISE
                   ? 'Server-side allowlisted tools enforced before any agent execution'
                   : 'Digest anchoring simulated in SQLite (no external chain)'}
@@ -226,18 +227,18 @@ export default function SettingsPage() {
           {api.IS_ENTERPRISE ? (
             <div className="space-y-2.5 text-[13px]">
               {loading && tools.length === 0 ? (
-                <p className="text-[#777b86]">Loading tool registry...</p>
+                <p className="text-[#2D372D]">Loading tool registry...</p>
               ) : tools.length === 0 ? (
-                <p className="text-[#777b86]">No tools registered for this tenant.</p>
+                <p className="text-[#2D372D]">No tools registered for this tenant.</p>
               ) : (
                 tools.map((t) => (
                   <div
                     key={t.id}
-                    className="p-3 rounded-xl bg-[#fafafb] border border-[#ececec] flex items-center justify-between"
+                    className="p-3 rounded-xl bg-[#F8F8F8] border border-[#DCDCD7] flex items-center justify-between"
                   >
                     <div>
-                      <span className="font-mono font-medium text-[#17191c]">{t.tool_name}</span>
-                      <span className="block text-[11px] text-[#777b86]">
+                      <span className="font-mono font-medium text-[#192319]">{t.tool_name}</span>
+                      <span className="block text-[11px] text-[#2D372D]">
                         Tier: {t.risk_tier} · Schema {t.schema_version}
                       </span>
                     </div>
@@ -259,37 +260,37 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div className="space-y-3 text-[13px]">
-              <div className="flex justify-between py-2 border-b border-[#ececec]">
-                <span className="text-[#777b86]">RPC Endpoint:</span>
-                <span className="font-mono text-[#17191c]">in-process (SQLite)</span>
+              <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+                <span className="text-[#2D372D]">RPC Endpoint:</span>
+                <span className="font-mono text-[#192319]">in-process (SQLite)</span>
               </div>
-              <div className="flex justify-between py-2 border-b border-[#ececec]">
-                <span className="text-[#777b86]">Chain ID:</span>
-                <span className="font-mono text-[#17191c]">n/a (mock)</span>
+              <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+                <span className="text-[#2D372D]">Chain ID:</span>
+                <span className="font-mono text-[#192319]">n/a (mock)</span>
               </div>
-              <div className="flex justify-between py-2 border-b border-[#ececec]">
-                <span className="text-[#777b86]">Confirmation:</span>
-                <span className="text-[#17191c]">Admin/internal mock confirm</span>
+              <div className="flex justify-between py-2 border-b border-[#DCDCD7]">
+                <span className="text-[#2D372D]">Confirmation:</span>
+                <span className="text-[#192319]">Admin/internal mock confirm</span>
               </div>
               <div className="flex justify-between py-2">
-                <span className="text-[#777b86]">User Wallets / Gas:</span>
-                <span className="text-[#777b86] italic">None (Gas-free private infrastructure)</span>
+                <span className="text-[#2D372D]">User Wallets / Gas:</span>
+                <span className="text-[#2D372D] italic">None (Gas-free private infrastructure)</span>
               </div>
             </div>
           )}
         </div>
 
         {/* Authorized Team Members / Enterprise User Management */}
-        <div className="bg-white rounded-2xl p-6 border border-[#ececec] shadow-sm space-y-5">
+        <div className="bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm space-y-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#f2f2f3] flex items-center justify-center text-[#17191c]">
+            <div className="w-10 h-10 rounded-full bg-[#F0F0EC] flex items-center justify-center text-[#192319]">
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-display text-[20px] text-[#17191c]">
+              <h3 className="font-display text-[20px] text-[#192319]">
                 {api.IS_ENTERPRISE ? 'User & Role Management' : 'RBAC Team Members'}
               </h3>
-              <p className="text-[12px] text-[#777b86]">
+              <p className="text-[12px] text-[#2D372D]">
                 {api.IS_ENTERPRISE
                   ? isAdmin
                     ? 'Provision users and assign RBAC roles in PostgreSQL'
@@ -302,26 +303,26 @@ export default function SettingsPage() {
           {api.IS_ENTERPRISE ? (
             isAdmin ? (
               <div className="space-y-4">
-                <form onSubmit={handleCreateUser} className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3.5 rounded-xl bg-[#fafafb] border border-[#ececec]">
+                <form onSubmit={handleCreateUser} className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3.5 rounded-xl bg-[#F8F8F8] border border-[#DCDCD7]">
                   <input
                     type="email"
                     required
                     placeholder="user@company.com"
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
-                    className="bg-white border border-[#ececec] rounded-lg px-3 py-2 text-[12px] text-[#17191c]"
+                    className="bg-white border border-[#DCDCD7] rounded-lg px-3 py-2 text-[12px] text-[#192319]"
                   />
                   <input
                     type="text"
                     placeholder="Display name"
                     value={newDisplayName}
                     onChange={(e) => setNewDisplayName(e.target.value)}
-                    className="bg-white border border-[#ececec] rounded-lg px-3 py-2 text-[12px] text-[#17191c]"
+                    className="bg-white border border-[#DCDCD7] rounded-lg px-3 py-2 text-[12px] text-[#192319]"
                   />
                   <select
                     value={newRole}
                     onChange={(e) => setNewRole(e.target.value as UserRole)}
-                    className="bg-white border border-[#ececec] rounded-lg px-3 py-2 text-[12px] text-[#17191c]"
+                    className="bg-white border border-[#DCDCD7] rounded-lg px-3 py-2 text-[12px] text-[#192319]"
                   >
                     <option value="operator">operator</option>
                     <option value="approver">approver</option>
@@ -335,7 +336,7 @@ export default function SettingsPage() {
                     placeholder="Password (min 8 chars)"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="bg-white border border-[#ececec] rounded-lg px-3 py-2 text-[12px] text-[#17191c]"
+                    className="bg-white border border-[#DCDCD7] rounded-lg px-3 py-2 text-[12px] text-[#192319]"
                   />
                   <button
                     type="submit"
@@ -349,18 +350,18 @@ export default function SettingsPage() {
 
                 <div className="space-y-2 text-[13px] max-h-64 overflow-y-auto">
                   {users.length === 0 ? (
-                    <p className="text-[12px] text-[#777b86]">
+                    <p className="text-[12px] text-[#2D372D]">
                       No database users provisioned yet. Add one above.
                     </p>
                   ) : (
                     users.map((u) => (
                       <div
                         key={u.user_id}
-                        className="p-2.5 rounded-xl bg-[#fafafb] border border-[#ececec] flex items-center justify-between gap-3"
+                        className="p-2.5 rounded-xl bg-[#F8F8F8] border border-[#DCDCD7] flex items-center justify-between gap-3"
                       >
                         <div className="min-w-0">
-                          <span className="font-medium text-[#17191c] block truncate">{u.display_name}</span>
-                          <span className="text-[#979799] block text-[11px] truncate">{u.email}</span>
+                          <span className="font-medium text-[#192319] block truncate">{u.display_name}</span>
+                          <span className="text-[#6D7344] block text-[11px] truncate">{u.email}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <select
@@ -368,7 +369,7 @@ export default function SettingsPage() {
                             onChange={(e) =>
                               handleRoleChange(u.user_id, e.target.value as UserRole, u.status as 'active' | 'disabled')
                             }
-                            className="bg-white border border-[#ececec] rounded-lg px-2 py-1 text-[11px] font-mono text-[#17191c]"
+                            className="bg-white border border-[#DCDCD7] rounded-lg px-2 py-1 text-[11px] font-mono text-[#192319]"
                           >
                             <option value="operator">operator</option>
                             <option value="approver">approver</option>
@@ -395,19 +396,19 @@ export default function SettingsPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-[13px] text-[#777b86]">
+              <p className="text-[13px] text-[#2D372D]">
                 Signed in as <span className="font-mono">{currentUser.role}</span>. User management is restricted to tenant Admins.
               </p>
             )
           ) : (
             <div className="space-y-2 text-[13px]">
               {DEMO_USERS.map((u) => (
-                <div key={u.id} className="p-2.5 rounded-xl bg-[#fafafb] border border-[#ececec] flex items-center justify-between">
+                <div key={u.id} className="p-2.5 rounded-xl bg-[#F8F8F8] border border-[#DCDCD7] flex items-center justify-between">
                   <div>
-                    <span className="font-medium text-[#17191c]">{u.name}</span>
-                    <span className="text-[#979799] block text-[11px]">{u.email}</span>
+                    <span className="font-medium text-[#192319]">{u.name}</span>
+                    <span className="text-[#6D7344] block text-[11px]">{u.email}</span>
                   </div>
-                  <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-white border border-[#ececec] capitalize">
+                  <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-white border border-[#DCDCD7] capitalize">
                     {u.role}
                   </span>
                 </div>
