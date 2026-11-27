@@ -613,10 +613,10 @@ def auth_test_login(
         data["user_id"] = email.strip().lower()
     elif not data.get("user_id"):
         data["user_id"] = f"demo-{effective_role}"
-    if tenant_id:
-        data["tenant_id"] = tenant_id
-    elif not data.get("tenant_id"):
-        data["tenant_id"] = os.environ.get("VERITAS_BOOTSTRAP_TENANT_ID", "default").strip() or "default"
+    default_tenant = os.environ.get("VERITAS_BOOTSTRAP_TENANT_ID", "default").strip() or "default"
+    if tenant_id and tenant_id.strip() != default_tenant:
+        raise ApiError(403, "DEMO_TENANT_ONLY", "Demo bypass login is restricted to the sandbox tenant.")
+    data["tenant_id"] = default_tenant
     try:
         identity = Identity.from_mapping(data)
     except Exception as exc:
