@@ -106,18 +106,30 @@ VERITAS_AGENT_TOKEN="$VERITAS_AGENT_TOKEN" \
   "$UVICORN_BIN" agent_service:app --host 127.0.0.1 --port 8001 --log-level warning &
 PIDS+=($!)
 
-echo "-> [2/5] ERP Sandbox Service on 127.0.0.1:8003..."
-ERP_SANDBOX_DB="$ERP_SANDBOX_DB" \
-  VERITAS_HARNESS_URL="$HARNESS_URL" \
-  ERP_SANDBOX_API_KEY="$ERP_SANDBOX_API_KEY" \
-  ERP_SANDBOX_HMAC_SECRET="$ERP_SANDBOX_HMAC_SECRET" \
-  "$UVICORN_BIN" erp_sandbox.main:app --host 127.0.0.1 --port 8003 --log-level warning &
-PIDS+=($!)
+NEED_ERP_SANDBOX=0
+if [ "${VERITAS_ERP_ADAPTER}" != "odoo" ]; then
+  NEED_ERP_SANDBOX=1
+  echo "-> [2/5] ERP Sandbox Service on 127.0.0.1:8003..."
+  ERP_SANDBOX_DB="$ERP_SANDBOX_DB" \
+    VERITAS_HARNESS_URL="$HARNESS_URL" \
+    ERP_SANDBOX_API_KEY="$ERP_SANDBOX_API_KEY" \
+    ERP_SANDBOX_HMAC_SECRET="$ERP_SANDBOX_HMAC_SECRET" \
+    "$UVICORN_BIN" erp_sandbox.main:app --host 127.0.0.1 --port 8003 --log-level warning &
+  PIDS+=($!)
+else
+  echo "-> [2/5] ERP Sandbox skipped (using real Odoo adapter: ${VERITAS_ERP_WEBHOOK_URL})."
+fi
 
-echo "-> [3/5] Mail Sandbox (SMTP :1025 | Inbox :8025)..."
-MAIL_SANDBOX_DB="$MAIL_SANDBOX_DB" \
-  "$UVICORN_BIN" mail_sandbox.server:app --host 127.0.0.1 --port 8025 --log-level warning &
-PIDS+=($!)
+NEED_MAIL_SANDBOX=0
+if [ "${SMTP_HOST}" = "127.0.0.1" ] || [ "${SMTP_HOST}" = "localhost" ]; then
+  NEED_MAIL_SANDBOX=1
+  echo "-> [3/5] Mail Sandbox (SMTP :1025 | Inbox :8025)..."
+  MAIL_SANDBOX_DB="$MAIL_SANDBOX_DB" \
+    "$UVICORN_BIN" mail_sandbox.server:app --host 127.0.0.1 --port 8025 --log-level warning &
+  PIDS+=($!)
+else
+  echo "-> [3/5] Mail Sandbox skipped (using real SMTP: ${SMTP_HOST}:${SMTP_PORT})."
+fi
 
 echo "-> [4/5] Enterprise Harness Gateway on 127.0.0.1:8002..."
 DATABASE_URL="$DATABASE_URL" \
@@ -141,14 +153,14 @@ PIDS+=($!)
 
 echo "-> Waiting for backend health (max 20s)..."
 AGENT_OK=0
-ERP_OK=0
-MAIL_OK=0
+ERP_OK=1; [ "$NEED_ERP_SANDBOX" = "1" ] && ERP_OK=0
+MAIL_OK=1; [ "$NEED_MAIL_SANDBOX" = "1" ] && MAIL_OK=0
 HARNESS_OK=0
 for _ in $(seq 1 20); do
   sleep 1
   curl -fsS http://127.0.0.1:8001/health/live >/dev/null 2>&1 && AGENT_OK=1
-  curl -fsS http://127.0.0.1:8003/health/live >/dev/null 2>&1 && ERP_OK=1
-  curl -fsS http://127.0.0.1:8025/health/live >/dev/null 2>&1 && MAIL_OK=1
+  if [ "$NEED_ERP_SANDBOX" = "1" ]; then curl -fsS http://127.0.0.1:8003/health/live >/dev/null 2>&1 && ERP_OK=1; fi
+  if [ "$NEED_MAIL_SANDBOX" = "1" ]; then curl -fsS http://127.0.0.1:8025/health/live >/dev/null 2>&1 && MAIL_OK=1; fi
   curl -fsS http://127.0.0.1:8002/health/ready >/dev/null 2>&1 && HARNESS_OK=1
   if [ "$AGENT_OK" = "1" ] && [ "$ERP_OK" = "1" ] && [ "$MAIL_OK" = "1" ] && [ "$HARNESS_OK" = "1" ]; then break; fi
 done
@@ -156,7 +168,7 @@ if [ "$AGENT_OK" != "1" ] || [ "$ERP_OK" != "1" ] || [ "$MAIL_OK" != "1" ] || [ 
   echo "ERROR: backend did not become healthy (agent=$AGENT_OK erp=$ERP_OK mail=$MAIL_OK harness=$HARNESS_OK)." >&2
   exit 1
 fi
-echo "   agent :8001 LIVE | erp :8003 LIVE | mail :8025 LIVE | enterprise harness :8002 READY"
+echo "   agent :8001 LIVE | enterprise harness :8002 READY (erp_sandbox=$NEED_ERP_SANDBOX mail_sandbox=$NEED_MAIL_SANDBOX)"
 
 if curl -fsS http://127.0.0.1:3000/ -o /dev/null 2>/dev/null; then
   echo "-> [5/5] Frontend already responding on :3000; reusing it (no duplicate process)."
