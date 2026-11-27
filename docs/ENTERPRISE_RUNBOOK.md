@@ -31,16 +31,26 @@ Tanpa `DATABASE_URL`, aplikasi memakai `sqlite:///./enterprise.db` hanya untuk l
 
 Jika `VERITAS_SIGNING_SEED` tidak diisi, kunci dibuat sementara setiap proses; resep lama tidak dapat diverifikasi setelah restart. **Jangan pakai kondisi ini di produksi.**
 
-## 3. Menjalankan stack lokal
+## 3. Menjalankan stack Docker / VPS Demo
 
 ```bash
+cp .env.vps.example .env
+# Isi minimal VERITAS_SIGNING_SEED (contoh: openssl rand -hex 32) dan POSTGRES_PASSWORD untuk VPS
 docker compose -f docker-compose.enterprise.yml up -d --build
-# UI:    http://localhost:8090
-# API:   http://localhost:8100  (hanya bound ke 127.0.0.1)
+# UI + API via Caddy: http://localhost:8090
+# Enterprise API langsung: http://localhost:8100 (bound ke 127.0.0.1)
+# ERP Sandbox: http://localhost:8003 (bound ke 127.0.0.1)
+# Mail Sandbox Web Inbox: http://localhost:8025 (SMTP :1025 internal ke enterprise)
 python3 scripts/enterprise_preflight.py
+
+# Backup & restore volume PostgreSQL di VPS:
+./scripts/backup_postgres.sh
+./scripts/restore_postgres.sh backups/veritas_<db>_<timestamp>.sql.gz
 ```
 
-Mode lokal memakai Postgres container dan `VERITAS_AUTH_TEST_MODE` serta kunci signing contoh. Untuk produksi, matikan test mode, isi OIDC, dan ganti `VERITAS_SIGNING_SEED`.
+Default `docker-compose.enterprise.yml` menyiapkan mode **demo perusahaan** dengan Postgres container, `erp_sandbox`, `mail_sandbox`, `VERITAS_SSO_BYPASS=1`, `VERITAS_KMS_BYPASS=1`, `VERITAS_AUTH_TEST_MODE=true`, dan `NEXT_PUBLIC_VERITAS_TEST_MODE=1`. Untuk hard-cutover produksi: matikan semua flag bypass (`0`/`false`), aktifkan `VERITAS_COOKIE_SECURE=1`, isi variabel OIDC, atur `VERITAS_SITE_ADDRESS` domain HTTPS Anda, dan ganti `VERITAS_SIGNING_SEED` / SMTP / ERP URL ke sistem nyata.
+
+> **Catatan jaringan `agent`:** Service `agent` berada di jaringan Docker `agent_net` yang `internal: true`. Tanpa gateway LLM internal yang terjangkau dari `agent_net`, `agent_service.py` otomatis memakai planner deterministik per-agent sehingga demo tetap berjalan stabil dan aman.
 
 ## 4. Menjalankan API saja
 
