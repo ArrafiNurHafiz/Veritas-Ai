@@ -2,7 +2,7 @@
 
 <br />
 
-<img src="frontend/public/veritas-logo.png" alt="VERITAS AI Logo" width="220" />
+<img src="docs/veritas-readme-logo.png" alt="VERITAS AI — Control Before Action" width="400" />
 
 # VERITAS AI
 
