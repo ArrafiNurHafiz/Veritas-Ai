@@ -27,6 +27,36 @@ assert response.json()["proposal"] == {
 }
 assert client.post("/internal/v1/proposals", json={**payload, "amount_idr": -1},
                    headers={"X-Agent-Token": "test-agent-token"}).status_code == 422
+agents_list_res = client.get("/internal/v1/agents", headers={"X-Agent-Token": "test-agent-token"})
+assert agents_list_res.status_code == 200 and len(agents_list_res.json()["agents"]) == 4
+hr_prop = client.post(
+    "/internal/v1/agents/hr-operations-agent/proposals",
+    json={"task_type": "workspace_provisioning", "payload": {"employee_id": "EMP-1", "department": "Eng", "access_tier": "standard"}},
+    headers={"X-Agent-Token": "test-agent-token"},
+)
+assert hr_prop.status_code == 200 and hr_prop.json()["proposal"]["tool"] == "provision_workspace"
+assert hr_prop.json()["planner"] == "agent_service:deterministic"
+assert client.post(
+    "/internal/v1/agents/hr-operations-agent/proposals",
+    json={"task_type": "invalid_task", "payload": {}},
+    headers={"X-Agent-Token": "test-agent-token"},
+).status_code == 422
+with (
+    patch.dict(os.environ, {"VERITAS_LLM_BASE_URL": "http://llm.test/v1", "VERITAS_LLM_MODEL": "test-model"}),
+    patch(
+        "agent_service._call_provider",
+        return_value={
+            "tool": "scan_iam_keys",
+            "arguments": {"account_id": "AWS-1", "scope": "staging"},
+        },
+    ),
+):
+    llm_prop = client.post(
+        "/internal/v1/agents/security-audit-agent/proposals",
+        json={"task_type": "iam_posture_scan", "payload": {"account_id": "AWS-1", "scope": "staging"}},
+        headers={"X-Agent-Token": "test-agent-token"},
+    )
+    assert llm_prop.status_code == 200 and llm_prop.json()["planner"] == "agent_service:llm"
 with patch.dict(os.environ, {"VERITAS_AGENT_URL": "http://127.0.0.1:1", "VERITAS_AGENT_TOKEN": "test-agent-token"}):
     proposal, source = llm_planner.propose(payload)
     assert proposal == {} and source == "agent_unavailable"

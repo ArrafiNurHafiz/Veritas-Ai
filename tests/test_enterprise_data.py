@@ -41,6 +41,8 @@ BUSINESS_TABLES = {
     "tool_registry",
     "egress_deliveries",
     "tool_calls",
+    "vendors",
+    "agent_configs",
 }
 
 
