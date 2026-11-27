@@ -2,7 +2,7 @@
 
 <br />
 
-<img src="frontend/public/veritas-logo.png" alt="VERITAS AI Logo" width="110" />
+<img src="frontend/public/veritas-logo.png" alt="VERITAS AI Logo" width="220" />
 
 # VERITAS AI
 
