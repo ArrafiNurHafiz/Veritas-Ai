@@ -12,5 +12,5 @@ for test in test_demo test_e2e test_agent_service test_seed test_openapi test_de
   .venv/bin/python "tests/$test.py"
 done
 
-echo "=== enterprise pytest ==="
-.venv/bin/python -m pytest tests/test_enterprise_data.py tests/test_enterprise_app.py -q
+echo "=== enterprise & sandbox pytest ==="
+.venv/bin/python -m pytest tests/test_enterprise_data.py tests/test_enterprise_app.py tests/test_erp_sandbox.py tests/test_mail_sandbox.py -q

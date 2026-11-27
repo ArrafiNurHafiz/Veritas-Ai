@@ -74,6 +74,10 @@ def main() -> None:
     status, identity = operator.call("GET", "/api/v1/me")
     check("identity resolves from session", status == 200 and identity.get("role") == "operator")
 
+    status, agents_body = operator.call("GET", "/api/v1/agents")
+    agent_ids = [a.get("agent_id") for a in agents_body.get("agents", [])]
+    check("four operational agents registered", status == 200 and len(agent_ids) == 4 and "procurement-agent" in agent_ids)
+
     key = "enterprise-" + uuid.uuid4().hex[:10]
     request = urllib.request.Request(
         BASE + "/api/v1/tasks",

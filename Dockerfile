@@ -10,6 +10,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY veritas_harness.py llm_planner.py agent_service.py anchor_chain.py seed_demo.py entrypoint.sh ./
+COPY enterprise ./enterprise
+COPY erp_sandbox ./erp_sandbox
+COPY mail_sandbox ./mail_sandbox
 RUN chmod +x entrypoint.sh
 
 RUN useradd --system --uid 10001 veritas && mkdir -p /data && chown veritas /data

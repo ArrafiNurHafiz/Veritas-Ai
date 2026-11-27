@@ -24,6 +24,11 @@ services:
       VERITAS_LLM_BASE_URL: ${VERITAS_LLM_BASE_URL:-}
       VERITAS_LLM_API_KEY: ${VERITAS_LLM_API_KEY:-}
       VERITAS_LLM_MODEL: ${VERITAS_LLM_MODEL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      VERITAS_PUBLIC_URL: ${VERITAS_PUBLIC_URL:-http://localhost:8090}
+      VERITAS_CORS_ORIGINS: ${VERITAS_CORS_ORIGINS:-http://localhost:8090,http://127.0.0.1:8090}
+      VERITAS_EXPIRY_SWEEP_SECONDS: ${VERITAS_EXPIRY_SWEEP_SECONDS:-15}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live', timeout=2)"]
       interval: 10s
@@ -49,9 +54,30 @@ services:
       VERITAS_AGENT_TOKEN: ${VERITAS_AGENT_TOKEN:-dev-agent-token}
       VERITAS_BOOTSTRAP_TENANT_ID: ${VERITAS_BOOTSTRAP_TENANT_ID:-default}
       VERITAS_BOOTSTRAP_TENANT_NAME: ${VERITAS_BOOTSTRAP_TENANT_NAME:-Default Tenant}
+      VERITAS_SSO_BYPASS: ${VERITAS_SSO_BYPASS:-1}
+      VERITAS_KMS_BYPASS: ${VERITAS_KMS_BYPASS:-1}
       VERITAS_COOKIE_SECURE: ${VERITAS_COOKIE_SECURE:-0}
       VERITAS_AUTH_TEST_MODE: ${VERITAS_AUTH_TEST_MODE:-true}
       VERITAS_TEST_IDENTITY_JSON: '${VERITAS_TEST_IDENTITY_JSON:-{"user_id":"local-admin","tenant_id":"default","roles":["admin"]}}'
+      VERITAS_PUBLIC_URL: ${VERITAS_PUBLIC_URL:-http://localhost:8090}
+      VERITAS_CORS_ORIGINS: ${VERITAS_CORS_ORIGINS:-http://localhost:8090,http://127.0.0.1:8090}
+      VERITAS_EXPIRY_SWEEP_SECONDS: ${VERITAS_EXPIRY_SWEEP_SECONDS:-15}
+      VERITAS_ERP_ADAPTER: ${VERITAS_ERP_ADAPTER:-webhook}
+      VERITAS_ERP_WEBHOOK_URL: ${VERITAS_ERP_WEBHOOK_URL:-http://erp_sandbox:8003/api/erp/webhook}
+      VERITAS_ERP_API_KEY: ${VERITAS_ERP_API_KEY:-}
+      VERITAS_ERP_HMAC_SECRET: ${VERITAS_ERP_HMAC_SECRET:-}
+      VERITAS_ALLOW_INSECURE_WEBHOOKS: ${VERITAS_ALLOW_INSECURE_WEBHOOKS:-1}
+      VERITAS_WEBHOOK_ALLOW_HOSTS: ${VERITAS_WEBHOOK_ALLOW_HOSTS:-erp_sandbox}
+      SMTP_HOST: ${SMTP_HOST:-mail_sandbox}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@veritas.local}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-0}
+      VERITAS_APPROVAL_NOTIFY_EMAILS: ${VERITAS_APPROVAL_NOTIFY_EMAILS:-approver@veritas.local,admin@veritas.local}
+      VERITAS_ANCHOR_RPC_URL: ${VERITAS_ANCHOR_RPC_URL:-}
+      VERITAS_ANCHOR_FROM: ${VERITAS_ANCHOR_FROM:-}
+      VERITAS_ANCHOR_CONTRACT: ${VERITAS_ANCHOR_CONTRACT:-}
       VERITAS_LLM_BASE_URL: ${VERITAS_LLM_BASE_URL:-}
       VERITAS_LLM_API_KEY: ${VERITAS_LLM_API_KEY:-}
       VERITAS_LLM_MODEL: ${VERITAS_LLM_MODEL:-}
@@ -99,12 +125,58 @@ services:
     restart: unless-stopped
     networks: [edge_net]
 
+  erp_sandbox:
+    build: .
+    entrypoint: ["uvicorn"]
+    command: ["erp_sandbox.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment:
+      ERP_SANDBOX_DB: /data/erp_sandbox.db
+      VERITAS_HARNESS_URL: http://enterprise:8100
+      ERP_SANDBOX_API_KEY: ${ERP_SANDBOX_API_KEY:-${VERITAS_ERP_API_KEY:-}}
+      ERP_SANDBOX_HMAC_SECRET: ${ERP_SANDBOX_HMAC_SECRET:-${VERITAS_ERP_HMAC_SECRET:-}}
+    volumes:
+      - erpdata:/data
+    ports:
+      - "127.0.0.1:8003:8003"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks: [edge_net]
+
+  mail_sandbox:
+    build: .
+    entrypoint: ["uvicorn"]
+    command: ["mail_sandbox.server:app", "--host", "0.0.0.0", "--port", "8025"]
+    environment:
+      MAIL_SANDBOX_DB: /data/mail_sandbox.db
+      MAIL_SANDBOX_SMTP_HOST: "0.0.0.0"
+      MAIL_SANDBOX_SMTP_PORT: "1025"
+    volumes:
+      - maildata:/data
+    ports:
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8025/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks: [edge_net]
+
   caddy:
     image: docker.io/library/caddy:2-alpine
     environment:
       VERITAS_SITE_ADDRESS: ${VERITAS_SITE_ADDRESS:-:80}
     ports:
-      - "8090:80"
+      - "${VERITAS_HTTP_PORT:-8090}:80"
+      - "${VERITAS_HTTPS_PORT:-8443}:443"
     volumes:
       - ./enterprise/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -117,6 +189,8 @@ services:
 
 volumes:
   pgdata:
+  erpdata:
+  maildata:
   caddy-data:
   caddy-config:
 
