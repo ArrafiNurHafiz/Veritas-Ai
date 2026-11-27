@@ -310,6 +310,37 @@ class ToolCall(Base):
     )
 
 
+class Vendor(Base, TimestampMixin):
+    __tablename__ = "vendors"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = _tenant_key()
+    vendor_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tax_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "vendor_code", name="uq_vendors_tenant_code"),
+        Index("ix_vendors_tenant_status", "tenant_id", "status"),
+    )
+
+
+class AgentConfig(Base, TimestampMixin):
+    __tablename__ = "agent_configs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = _tenant_key()
+    agent_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_by: Mapped[str | None] = mapped_column(String(128))
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "agent_id", name="uq_agent_configs_tenant_agent"),
+        Index("ix_agent_configs_tenant_enabled", "tenant_id", "enabled"),
+    )
+
+
 # --------------------------------------------------------------------------- append-only guard
 
 
@@ -370,4 +401,6 @@ ALL_MODELS = (
     ToolRegistryEntry,
     EgressDelivery,
     ToolCall,
+    Vendor,
+    AgentConfig,
 )

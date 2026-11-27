@@ -15,11 +15,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .hashing import GENESIS_HASH, audit_hash, canonical_json, utc_now, utc_plus
 from .models import (
+    AgentConfig,
     Anchor,
     Approval,
     AuditEvent,
@@ -34,6 +35,7 @@ from .models import (
     ToolRegistryEntry,
     User,
     UserTenant,
+    Vendor,
 )
 
 
@@ -94,6 +96,13 @@ def create_tenant(
 
 def get_tenant(session: Session, *, tenant_id: str) -> Tenant | None:
     return session.get(Tenant, _require_tenant(tenant_id))
+
+
+def get_tenant_by_slug(session: Session, *, slug: str) -> Tenant | None:
+    clean = slug.strip().lower()
+    if not clean:
+        return None
+    return session.scalar(select(Tenant).where(Tenant.slug == clean))
 
 
 def list_tenants(session: Session, *, limit: int = 50, offset: int = 0) -> list[Tenant]:
@@ -412,6 +421,21 @@ def list_executions(
     )
 
 
+def count_executions_by_agent(session: Session, *, tenant_id: str) -> dict[str, int]:
+    """Return execution counts grouped by agent_id within a single tenant."""
+    tenant_id = _require_tenant(tenant_id)
+    rows = session.execute(
+        select(Execution.agent_id, func.count())
+        .where(Execution.tenant_id == tenant_id)
+        .group_by(Execution.agent_id)
+    ).all()
+    counts: dict[str, int] = {}
+    for raw_agent_id, total in rows:
+        key = raw_agent_id or "procurement-agent"
+        counts[key] = counts.get(key, 0) + int(total)
+    return counts
+
+
 def set_execution_status(
     session: Session,
     *,
@@ -610,6 +634,8 @@ def decide_approval(
         )
     if row.status != "pending":
         raise InvalidTransition(f"approval is {row.status}, not pending")
+    if row.expires_at <= utc_now():
+        raise InvalidTransition("approval has expired")
     row.status = "approved" if decision == "approve" else "rejected"
     row.version = row.version + 1
     row.approver = approver
@@ -635,6 +661,38 @@ def expire_approval(
     row.decided_at = utc_now()
     session.flush()
     return row
+
+
+def list_expired_pending_approvals(
+    session: Session, *, tenant_id: str, now: str | None = None
+) -> list[Approval]:
+    """Return pending approvals in the tenant whose expires_at timestamp has passed."""
+    tenant_id = _require_tenant(tenant_id)
+    cutoff = now or utc_now()
+    return list(
+        session.scalars(
+            select(Approval).where(
+                Approval.tenant_id == tenant_id,
+                Approval.status == "pending",
+                Approval.expires_at <= cutoff,
+            )
+        )
+    )
+
+
+def list_all_expired_pending_approvals(
+    session: Session, *, now: str | None = None, limit: int = 100
+) -> list[Approval]:
+    """Return overdue pending approvals across all tenants for background sweeping."""
+    cutoff = now or utc_now()
+    return list(
+        session.scalars(
+            select(Approval)
+            .where(Approval.status == "pending", Approval.expires_at <= cutoff)
+            .order_by(Approval.expires_at)
+            .limit(_limit(limit))
+        )
+    )
 
 
 # --------------------------------------------------------------------------- receipts / anchors
@@ -844,6 +902,129 @@ def set_tool_enabled(
     row.enabled = bool(enabled)
     session.flush()
     return row
+
+
+# --------------------------------------------------------------------------- vendors
+
+
+def upsert_vendor(
+    session: Session,
+    *,
+    tenant_id: str,
+    id: str,
+    vendor_code: str,
+    name: str,
+    tax_id: str | None = None,
+    status: str = "active",
+) -> Vendor:
+    tenant_id = _require_tenant(tenant_id)
+    code = vendor_code.strip()
+    existing = get_vendor_by_code(session, tenant_id=tenant_id, vendor_code=code)
+    if existing is not None:
+        existing.name = name.strip()
+        if tax_id is not None:
+            existing.tax_id = tax_id.strip() or None
+        existing.status = status
+        session.flush()
+        return existing
+    row = Vendor(
+        id=id,
+        tenant_id=tenant_id,
+        vendor_code=code,
+        name=name.strip(),
+        tax_id=tax_id.strip() if tax_id else None,
+        status=status,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def get_vendor_by_code(session: Session, *, tenant_id: str, vendor_code: str) -> Vendor | None:
+    tenant_id = _require_tenant(tenant_id)
+    return session.scalar(
+        select(Vendor).where(Vendor.tenant_id == tenant_id, Vendor.vendor_code == vendor_code.strip())
+    )
+
+
+def list_vendors(session: Session, *, tenant_id: str, limit: int = 100) -> list[Vendor]:
+    tenant_id = _require_tenant(tenant_id)
+    return list(
+        session.scalars(
+            select(Vendor)
+            .where(Vendor.tenant_id == tenant_id)
+            .order_by(Vendor.vendor_code)
+            .limit(_limit(limit))
+        )
+    )
+
+
+# --------------------------------------------------------------------------- agent configs
+
+
+def get_agent_config(session: Session, *, tenant_id: str, agent_id: str) -> AgentConfig | None:
+    tenant_id = _require_tenant(tenant_id)
+    return session.scalar(
+        select(AgentConfig).where(
+            AgentConfig.tenant_id == tenant_id,
+            AgentConfig.agent_id == agent_id.strip(),
+        )
+    )
+
+
+def list_agent_configs(session: Session, *, tenant_id: str) -> list[AgentConfig]:
+    tenant_id = _require_tenant(tenant_id)
+    return list(
+        session.scalars(
+            select(AgentConfig)
+            .where(AgentConfig.tenant_id == tenant_id)
+            .order_by(AgentConfig.agent_id)
+        )
+    )
+
+
+def upsert_agent_config(
+    session: Session,
+    *,
+    tenant_id: str,
+    id: str,
+    agent_id: str,
+    enabled: bool,
+    updated_by: str | None = None,
+) -> AgentConfig:
+    tenant_id = _require_tenant(tenant_id)
+    clean_agent = agent_id.strip()
+    existing = get_agent_config(session, tenant_id=tenant_id, agent_id=clean_agent)
+    if existing is not None:
+        existing.enabled = enabled
+        existing.updated_by = updated_by
+        session.flush()
+        return existing
+    row = AgentConfig(
+        id=id,
+        tenant_id=tenant_id,
+        agent_id=clean_agent,
+        enabled=enabled,
+        updated_by=updated_by,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def list_approver_emails(session: Session, *, tenant_id: str) -> list[str]:
+    tenant_id = _require_tenant(tenant_id)
+    stmt = (
+        select(User.email)
+        .join(UserTenant, User.id == UserTenant.user_id)
+        .where(
+            UserTenant.tenant_id == tenant_id,
+            UserTenant.status == "active",
+            User.status == "active",
+            UserTenant.role.in_(("approver", "admin")),
+        )
+    )
+    return [email for email in session.scalars(stmt).all() if email and "@" in email]
 
 
 def create_egress_delivery(
