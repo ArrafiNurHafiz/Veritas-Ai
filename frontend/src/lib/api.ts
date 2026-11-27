@@ -373,6 +373,27 @@ export interface ToolView {
   created_at: string;
 }
 
+export interface TenantCreateResult {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  seeded: boolean;
+}
+
+export function createTenant(payload: {
+  id: string;
+  name: string;
+  slug?: string;
+}) {
+  return request<TenantCreateResult>('/api/v1/tenants', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getUsers() {
   return request<{ users: TenantUserView[]; total: number }>('/api/v1/users');
 }

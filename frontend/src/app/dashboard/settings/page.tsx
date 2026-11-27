@@ -32,6 +32,10 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [creating, setCreating] = useState(false);
 
+  const [tenantIdInput, setTenantIdInput] = useState('');
+  const [tenantNameInput, setTenantNameInput] = useState('');
+  const [creatingTenant, setCreatingTenant] = useState(false);
+
   useEffect(() => {
     if (!api.IS_ENTERPRISE) return;
     let active = true;
@@ -89,6 +93,29 @@ export default function SettingsPage() {
       setFeedback(`Updated user ${userId} to role "${updated.role}" (${updated.status}).`);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to update role.');
+    }
+  };
+
+  const handleCreateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !api.IS_ENTERPRISE) return;
+    setCreatingTenant(true);
+    setErrorMsg(null);
+    setFeedback(null);
+    try {
+      const created = await api.createTenant({
+        id: tenantIdInput.trim().toLowerCase(),
+        name: tenantNameInput.trim(),
+      });
+      setTenantIdInput('');
+      setTenantNameInput('');
+      setFeedback(
+        `Company tenant "${created.name}" (${created.id}) created & seeded. Sign in at /login using your Email, Password, and Tenant ID "${created.id}".`,
+      );
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to create company tenant.');
+    } finally {
+      setCreatingTenant(false);
     }
   };
 
@@ -170,6 +197,45 @@ export default function SettingsPage() {
               </span>
             </div>
           </div>
+
+          {api.IS_ENTERPRISE && isAdmin && (
+            <form onSubmit={handleCreateTenant} className="pt-4 border-t border-[#DCDCD7] space-y-3">
+              <div className="text-[12px] font-semibold text-[#192319] uppercase tracking-wider">
+                Onboard New Company Tenant
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <input
+                  type="text"
+                  required
+                  minLength={2}
+                  maxLength={64}
+                  pattern="[a-z0-9][a-z0-9-]*"
+                  placeholder="Tenant ID (e.g. pt-nusantara)"
+                  value={tenantIdInput}
+                  onChange={(e) => setTenantIdInput(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] font-mono bg-[#F7F7F5]"
+                />
+                <input
+                  type="text"
+                  required
+                  minLength={2}
+                  maxLength={255}
+                  placeholder="Company Name (e.g. PT Nusantara Tbk)"
+                  value={tenantNameInput}
+                  onChange={(e) => setTenantNameInput(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] bg-[#F7F7F5]"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={creatingTenant}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#192319] text-[#F7F7F5] text-[12px] font-medium hover:bg-[#2D372D] disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {creatingTenant ? 'Provisioning Tenant...' : 'Create Company Tenant'}
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Cryptographic Key Store */}
