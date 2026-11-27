@@ -1,0 +1,14 @@
+.venv/
+.git/
+frontend/
+veritas-demo-video/
+docs/
+tests/
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+.pytest_cache/
+.env
+.env.*
+!.env.example
