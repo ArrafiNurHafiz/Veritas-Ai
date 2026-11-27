@@ -1,244 +1,223 @@
-# VERITAS AI — Harness slice
+<div align="center">
 
-Working vertical slice of the P0 demo path described in `docs/`: **Control Before Action**.
-One service (`veritas_harness.py`), SQLite, deterministic planner (no LLM), simulated
-`approve_invoice` tool, Ed25519 receipts, local mock anchor (optional dev-EVM adapter), and an outbound-data gate to a
-local mock receiver.
+# VERITAS AI
 
-Status: Harness backend and its embedded demo UI exist. The Next.js app under
-`frontend/` is present but still renders mock data; a separate Backend does not
-exist. An optional experimental deterministic Agent service is available locally,
-but is not part of the default deployment. Anchoring defaults to a local mock; an optional JSON-RPC
-adapter can submit the digest to a dev EVM node, but no Besu network or contract
-is deployed.
+### **Control Before Action** — Deterministic Runtime Governance Harness for Enterprise AI Agents
 
-Submission deliverables, judge walkthrough and claim guardrails: [docs/submission.md](docs/submission.md).
+[![CI](https://img.shields.io/github/actions/workflow/status/ArrafiNurHafiz/Veritas-Ai/ci.yml?branch=main&label=CI&logo=github)](https://github.com/ArrafiNurHafiz/Veritas-Ai/actions)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Enterprise_Harness-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-16_App_Router-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16_Append--Only-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Crypto](https://img.shields.io/badge/Proof-Ed25519_%2B_RFC_8785-16A34A)](#cryptographic-proof--audit-chain)
 
-## Run
+*Autonomous AI agents propose structured actions inside an isolated network—holding zero database credentials, signing keys, or direct write access. VERITAS enforces deterministic policy, human Separation of Duties, and tamper-evident Ed25519 receipts before any tool executes.*
+
+[Quick Start (Docker)](#-quick-start-enterprise-stack) · [3-Minute Verification](#-3-minute-judge-verification-flow) · [Architecture](#-system-architecture) · [Agents & Tools](#-multi-agent-bounded-catalog) · [Test Suites](#-verification--testing) · [Pitch Deck](docs/VERITAS_AI_Build2036_Deck.pptx)
+
+</div>
+
+---
+
+## Why VERITAS AI?
+
+Enterprise AI agents are rapidly moving from read-only copilots into **ERP, Finance, HR Operations, and Cloud IAM**. Giving an LLM direct function-calling authority and live credentials creates unacceptable risk: one prompt injection or hallucinated parameter can trigger irreversible financial or security mutations.
+
+**VERITAS AI** solves this by placing a deterministic **Runtime Governance Harness** between LLM reasoning and real enterprise systems:
+
+| Threat / Gap | Traditional LLM SDKs | VERITAS AI (`Control Before Action`) |
+| --- | --- | --- |
+| **Credential Exposure** | Agent runtime holds DB/ERP API keys | **Proposal-Only Isolation** (`agent_net` internal): zero DB credentials, zero signing keys, zero outbound egress |
+| **Probabilistic Guardrails** | LLM-on-LLM checks add latency & can be jailbroken | **Deterministic Python Policy Engine**: schema validation, FX normalization, allowlists, and hard caps |
+| **Self-Approval / Race Conditions** | Weak or stateless checks | **Strict Separation of Duties** (`403 SEPARATION_OF_DUTIES`), optimistic locking (`expected_version`), & **Anti-TOCTOU Resume Gate** |
+| **Mutable Logs** | Standard application logs can be altered | **Ed25519 Signed Receipts** (RFC 8785 canonical JSON) + **SHA-256 hash chain** enforced by PostgreSQL 16 `UPDATE`/`DELETE` triggers |
+
+---
+
+## System Architecture
+
+The enterprise deployment runs as a **7-container Docker Compose stack** partitioned across **3 isolated networks** (`edge_net`, internal `agent_net`, and internal `db_net`) to prevent lateral bypass:
+
+```mermaid
+flowchart LR
+    User["Operator / Approver / Admin / Auditor"] --> Caddy["Caddy Reverse Proxy (:8090 / :443)"]
+    Caddy --> Web["Next.js 16 Frontend (:3000)"]
+    Caddy --> Harness["VERITAS Enterprise Harness (:8100)"]
+
+    subgraph agent_net ["agent_net (internal: true — no internet/DB access)"]
+        Agent["Agent Service (:8001)"]
+        LLM["LLM Gateway / Deterministic Planner"]
+        Agent <--> LLM
+    end
+
+    subgraph db_net ["db_net (internal: true — DB isolated)"]
+        PG["PostgreSQL 16 (Alembic 0001-0004 + Append-Only Triggers)"]
+    end
+
+    Harness <-->|"Proposal JSON Only"| Agent
+    Harness <-->|"SQLAlchemy + Hash Chain"| PG
+    Harness -->|"SSRF Guard + HMAC-SHA256"| ERP["ERP Sandbox (:8003)"]
+    Harness -->|"SMTP Alerts"| Mail["Mail Sandbox (:1025 / :8025)"]
+```
+
+### Validated Execution State Machine
+
+Every agent proposal is tracked through an explicit, audited state machine:
+
+```
+CREATED ─▶ PLANNING ─▶ POLICY_CHECK ─┬─▶ ALLOWED ─────────▶ EXECUTING ─▶ SUCCEEDED (Ed25519 Receipt)
+                                     ├─▶ WAITING_APPROVAL ─▶ (SoD + Anti-TOCTOU Resume) ─▶ EXECUTING / DENIED_ON_RESUME
+                                     └─▶ DENIED (0 tool calls executed)
+```
+
+---
+
+## Multi-Agent Bounded Catalog
+
+VERITAS governs **4 operational agents** and **8 bounded tools** via a server-side registry (`enterprise/agents.py`, `enterprise/tools.py`). Unregistered tools or LLM self-authorization claims are deterministically rejected.
+
+| Agent | Bounded Tools | Governance Scope |
+| --- | --- | --- |
+| `procurement-agent` | `approve_invoice`, `check_vendor_status` | Invoice threshold tiers (`<= Rp 5M` auto-allow for `V-ABC`/`V-XYZ`, `Rp 5M–25M` human gate, `> Rp 25M` hard-cap deny) + USD/SGD/EUR FX normalization |
+| `finance-risk-agent` | `audit_reconciliation`, `flag_discrepancy` | Ledger discrepancy checks and risk escalation |
+| `hr-operations-agent` | `provision_workspace`, `log_badge_request` | Workspace provisioning and physical/digital badge workflows |
+| `security-audit-agent` | `scan_iam_keys`, `revoke_stale_token` | Stale IAM key scanning and gated token revocation |
+
+---
+
+## Quick Start (Enterprise Stack)
+
+### 1. One-Command 7-Container Docker Compose Stack
+
+```sh
+cp .env.vps.example .env
+docker compose -f docker-compose.enterprise.yml up -d --build
+```
+
+Run the end-to-end live preflight verification (tests Caddy `:8090`, PostgreSQL 16, all 4 agents, 6 ERP transactions, SMTP Mail Sandbox, and `pg_dump` -> `psql` restore):
+
+```sh
+python3 scripts/enterprise_preflight.py
+```
+
+**Service Endpoints:**
+- **Web UI & API Gateway (Caddy):** `http://localhost:8090`
+- **Public Trust Explorer (No Login Required):** `http://localhost:8090/dashboard/trust`
+- **ERP Sandbox (HMAC Target):** `http://localhost:8003`
+- **Mail Sandbox (SMTP Web Inbox):** `http://localhost:8025`
+
+### 2. Local Development Stack (Without Docker)
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python tests/test_demo.py          # 140 acceptance checks, no framework
-.venv/bin/python tests/test_e2e.py           # 36 checks against a real uvicorn process
-.venv/bin/python tests/test_seed.py          # 9 seed checks
-.venv/bin/python tests/test_openapi.py       # contract snapshot (use --write after an intended API change)
-.venv/bin/python seed_demo.py                # Nexora demo dataset (idempotent)
+./start_local.sh
+```
+
+`start_local.sh` launches the local Enterprise Harness, Agent Service, ERP/Mail sandboxes, and Next.js frontend.
+
+### 3. Legacy Single-Service Slice (`veritas_harness.py`)
+
+For lightweight single-process SQLite testing (`:8002`):
+
+```sh
+.venv/bin/python seed_demo.py
 .venv/bin/uvicorn veritas_harness:app --port 8002
 ```
 
-Schema changes are versioned in `MIGRATIONS` and recorded in `schema_migrations`;
-importing the module applies pending steps once and is safe to repeat.
+---
 
-## Demo credentials (dev defaults, override with `VERITAS_TOKENS`)
+## 3-Minute Judge Verification Flow
 
-| Token | Role |
-| --- | --- |
-| `tok-operator` | operator |
-| `tok-approver` | approver |
-| `tok-admin` | admin |
-| `tok-auditor` | auditor |
+1. **Multi-Role Login:** Open `http://localhost:8090/login` and sign in with the pre-seeded demo personas (or switch roles across **Operator**, **Approver**, and **Admin**).
+2. **Auto-Allow (`<= Rp 5M`):** In **Task Center** (`/dashboard/tasks`), dispatch an invoice of `Rp 3,200,000` to allowlisted vendor `V-ABC` -> immediately transitions to `ALLOWED` / `SUCCEEDED` with an **Ed25519 receipt**.
+3. **Human Gate (`Rp 5M–25M`):** Dispatch `Rp 8,500,000` -> pauses at `WAITING_APPROVAL` with **`0` downstream tool calls**, and triggers an approval notification email visible in **Mail Sandbox** (`:8025`).
+4. **Separation of Duties & Commit:** Attempting to approve as the same Operator returns **`403 SEPARATION_OF_DUTIES`**. Sign in as **Approver** in `/dashboard/approvals` and approve -> Anti-TOCTOU revalidation passes and commits to **ERP Sandbox** (`:8003`).
+5. **1-Byte Tamper Test:** Open **Public Trust Explorer** (`/dashboard/trust`), inspect any signed receipt, and trigger the **1-Byte Tamper Simulation** -> Ed25519 signature verification immediately **FAILS**.
 
-Send as `Authorization: Bearer <token>`. Internal routes use `X-Internal-Token`
-(default `dev-internal`, override with `VERITAS_INTERNAL_TOKEN`).
+### Pre-Seeded Demo Personas
 
-## Run with a container
+| Role | Demo Email | Demo Bearer Token | Primary Surface |
+| --- | --- | --- | --- |
+| **Operator** | `marcus.vance@nexora.internal` | `tok-operator` | `/dashboard/tasks` |
+| **Approver** | `sarah.jenkins@nexora.internal` | `tok-approver` | `/dashboard/approvals` |
+| **Admin** | `alexa.chen@nexora.internal` | `tok-admin` | `/dashboard/agents`, `/dashboard/policies` |
+| **Auditor** | `dr.rachel.k@nexora.internal` | `tok-auditor` | `/dashboard/trust` |
 
-```sh
-docker compose up --build -d
-docker compose run --rm harness python seed_demo.py   # optional demo dataset
-curl -s 127.0.0.1:8002/health/ready
-```
+---
 
-The image runs as UID 10001 with the SQLite file on the `veritas-data` volume.
-Override `VERITAS_CORS_ORIGINS`, `VERITAS_TOKENS`, `VERITAS_INTERNAL_TOKEN` and
-`VERITAS_LOG_JSON` through the environment. This is still an HTTP demo: TLS,
-network isolation and a reverse proxy belong to deployment, not this file.
+## Key Security & Governance Guarantees
 
-## Separate frontend contract
+- **Proposal-Only Agent Boundary:** `agent_service` (`:8001`) runs in `agent_net` (`internal: true`) with zero database credentials or signing keys. Prompt injections inside untrusted payloads are treated strictly as data.
+- **Anti-TOCTOU Resume Revalidation:** When an approval is resumed, `enterprise` re-checks `policy_version`, `args_hash`, live agent status (`AGENT_DISABLED`), and vendor blocklists—enforcing `DENIED_ON_RESUME` if rules changed mid-flight.
+- **Cryptographic Proof & Append-Only Audit:** Every execution issues an **Ed25519** signature over **RFC 8785** canonical JSON + nonce, chained via `prev_event_hash` (SHA-256) and protected by SQLite & PostgreSQL 16 triggers that reject `UPDATE`/`DELETE`.
+- **SSRF & Webhook Security:** Outbound connectors enforce IP/host allowlists (`VERITAS_WEBHOOK_ALLOW_HOSTS`) and sign payloads with **HMAC-SHA256** (`X-Veritas-Signature`).
+- **Session & Edge Hardening:** PKCE OIDC support, Scrypt password hashing, Double-Submit CSRF (`vt_csrf` + `X-CSRF-Token`), correlation IDs (`X-Correlation-ID`), and Prometheus `/metrics`.
 
-The frontend runs on another origin. Set the allowlist (comma-separated, no
-wildcard because credentials are sent):
+---
 
-```sh
-export VERITAS_CORS_ORIGINS=http://localhost:3000
-```
+## Verification & Testing
 
-- `POST /api/v1/auth/login` accepts either demo credentials
-  (`{"email":"marcus.vance@nexora.internal","password":"demo123456"}`) or a demo
-  token (`{"token":"tok-operator"}`), returning `{user, role, csrf_token,
-  expires_in}` plus `vt_session` + `vt_csrf` cookies. Sessions are server-side
-  rows; only their hashes are stored. `POST /api/v1/auth/logout`,
-  `GET /api/v1/me` (adds `email` for email logins).
-- Demo email accounts use the frontend personas: `alexa.chen@nexora.internal`
-  (admin), `sarah.jenkins@nexora.internal` (approver),
-  `marcus.vance@nexora.internal` (operator), `dr.rachel.k@nexora.internal`
-  (auditor). Override the password with `VERITAS_DEMO_PASSWORD` and the whole
-  map with `VERITAS_ACCOUNTS`; these are synthetic accounts, not a user store.
-- Session TTL is `VERITAS_SESSION_TTL_SECONDS` (default 12 hours); logout and
-  expiry both stop cookie authentication. Set `VERITAS_COOKIE_SECURE=1` behind
-  HTTPS and `VERITAS_COOKIE_SAMESITE` for cross-site deployments. Five failed
-  logins per credential per minute answer `429 RATE_LIMITED` (in-process, per
-  worker).
-- Cookie-authenticated mutations must send `X-CSRF-Token` matching the `vt_csrf`
-  cookie and the active session, otherwise `403 CSRF_REQUIRED`. Bearer requests
-  need no CSRF header.
-- Read models for the dashboard: `GET /api/v1/executions?status=&limit=&offset=`,
-  `GET /api/v1/dashboard/summary`, `GET /api/v1/policies`, `GET /api/v1/agents`.
-  Approval rows carry `execution.proposal` so the approver view does not need a
-  second request.
-- `POST /api/v1/anchors/{id}/confirm` is admin-only (bearer or cookie+CSRF); the
-  `X-Internal-Token` route stays for service-to-service use.
-- Error envelope `{"error":{"code","message","details"},"correlation_id"}`; every
-  response carries `X-Correlation-ID`.
-- Anchor `pending` never verifies. Only `confirmed` yields `verified=true`.
-- Execution anchor view: `{status, tx_ref, attempts, last_error}`; `submitted` is still
-  not verified until read-back confirms.
-
-## Flow in 6 requests
-
-Or open `http://localhost:8002/ui` and sign in with a demo token — the dashboard
-covers submit, approve/reject, timeline, receipt verification, mock anchor confirm
-and the outbound-data gate. Demo UI is embedded in the Harness (the separate
-Frontend service from `docs/` is still pending); cookie session + double-submit CSRF.
-`http://localhost:8002/trust` verifies a receipt without login, by ID or pasted JSON.
+Run the full test suite:
 
 ```sh
-# 1. Operator submits an over-limit invoice -> WAITING_APPROVAL, zero tool calls
-curl -s localhost:8002/api/v1/tasks -H 'Authorization: Bearer tok-operator' \
-  -H 'Idempotency-Key: demo-inv-001' -H 'Content-Type: application/json' \
-  -d '{"task_type":"invoice_review","payload":{"invoice_id":"INV-2036-001","amount_idr":8500000,"vendor":"ABC"}}'
-
-# 2. Approver approves the bound action -> SUCCEEDED, receipt issued
-curl -s localhost:8002/api/v1/approvals/<approval_id>/decisions \
-  -H 'Authorization: Bearer tok-approver' -H 'Content-Type: application/json' \
-  -d '{"decision":"approve","reason":"Reviewed","expected_version":1}'
-
-# 3. Auditor verifies signature + hash; anchor is still pending -> verified=false
-curl -s -X POST localhost:8002/api/v1/receipts/<receipt_id>/verify -H 'Authorization: Bearer tok-auditor'
-
-# 4. Confirm the mock anchor, then verify again -> verified=true
-curl -s -X POST localhost:8002/internal/v1/anchors/<anchor_id>/confirm -H 'X-Internal-Token: dev-internal'
-
-# 5. Outbound data: sensitive field -> DENY, mock receiver records zero calls
-curl -s localhost:8002/api/v1/egress/send -H 'Authorization: Bearer tok-operator' \
-  -H 'Idempotency-Key: egress-1' -H 'Content-Type: application/json' \
-  -d '{"destination":"mock://crm","payload":{"name":"Nexora","api_key":"sk-live-secret"}}'
-
-# 6. Inspect mock receiver calls
-curl -s localhost:8002/internal/mock/receiver/calls -H 'X-Internal-Token: dev-internal'
+./scripts/run_all_tests.sh
 ```
 
-## Policy (deterministic, version 1)
-
-- Auto-allow `approve_invoice` when `amount_idr <= 5,000,000` and vendor is `V-ABC`/`V-XYZ`.
-- Above that, up to `25,000,000` → `APPROVAL_REQUIRED`; above → deny. Unknown tool/vendor → deny.
-- Approval binds execution, argument hash and policy version; reject/expiry/replay produce zero tool calls.
-- Token carries `org`/`project`; cross-org execution, event and receipt reads return `404`, and approval lists are filtered by scope.
-- Egress allowlist `mock://crm`, `mock://ledger`; fields `customer_secret`, `api_key`, `card_number` are denied.
-- Delivery outcome is recorded separately from the policy verdict (`DELIVERED`, `FAILED`, `SKIPPED`);
-  replaying a failed idempotency key retries delivery and never delivers twice. The mock receiver can be
-  failed on purpose with `POST /internal/mock/receiver/failures {"remaining": n}`.
-
-## Demo dataset
-
-`seed_demo.py` writes the Nexora story through the real API: one auto-allowed and
-executed invoice with a confirmed anchor, one approved-then-executed invoice with a
-pending anchor, one invoice still waiting for the live approval decision, one denied
-by the hard cap, one denied by vendor allowlist, one blocked egress (sensitive field)
-and one delivered redacted egress. Re-running is safe; fixed idempotency keys replay.
+Or run individual suites:
 
 ```sh
-.venv/bin/python seed_demo.py && .venv/bin/uvicorn veritas_harness:app --port 8002
+# Enterprise & PostgreSQL 16 integration suite (49 tests, 0 skipped)
+.venv/bin/pytest -q
+
+# Legacy slice acceptance, E2E restart-durability, seed & OpenAPI contract checks
+.venv/bin/python tests/test_demo.py           # 140+ acceptance checks
+.venv/bin/python tests/test_e2e.py            # 36 HTTP & restart-durability checks
+.venv/bin/python tests/test_seed.py           # 9 seed checks
+.venv/bin/python tests/test_openapi.py        # 9 OpenAPI contract checks
+.venv/bin/python tests/test_agent_service.py  # Agent isolation checks
+
+# Frontend lint & production build
+cd frontend && pnpm eslint src/ && pnpm build # 13/13 static pages
 ```
 
-Schema changes are versioned in `MIGRATIONS` and recorded in `schema_migrations`;
-importing the module applies pending steps once and is safe to repeat.
+---
 
-## Planner
+## Repository Structure
 
-Default: deterministic (`plan_task`), no key needed. Optional OpenAI-compatible model:
-
-```sh
-export VERITAS_LLM_BASE_URL=https://api.example.com/v1
-export VERITAS_LLM_API_KEY=...
-export VERITAS_LLM_MODEL=gpt-4o-mini
+```text
+.
+├── enterprise/                 # Enterprise FastAPI Harness (:8100), policy, KMS, LLM gateway, Alembic (0001-0004)
+├── frontend/                   # Next.js 16 (App Router) + React 19 + Tailwind CSS v4 console (:3000)
+├── erp_sandbox/                # Target ERP webhook sandbox with HMAC verification (:8003)
+├── mail_sandbox/               # Target SMTP & web inbox sandbox (:1025 / :8025)
+├── agent_service.py            # Isolated proposal-only agent microservice (:8001)
+├── llm_planner.py              # Deterministic fallback & OpenAI-compatible structured planner
+├── veritas_harness.py          # Standalone SQLite slice for lightweight local testing (:8002)
+├── scripts/                    # enterprise_preflight.py, run_all_tests.sh, backup_postgres.sh, restore_postgres.sh
+├── tests/                      # Pytest enterprise, PostgreSQL, sandbox, E2E, and contract suites
+├── docs/                       # Architecture docs, PRD, Runbook, Pitch Deck (.pptx), OpenAPI spec
+├── Caddyfile                   # Reverse proxy config (:8090 / TLS-ready :443)
+└── docker-compose.enterprise.yml
 ```
 
-Model output is untrusted data: `proposal_error` + `evaluate` deny malformed or
-unregistered proposals, and a model-proposed amount above the limit still needs
-human approval. Provider failure or missing config falls back to the deterministic
-planner; the chosen path is recorded in the `PROPOSAL` event (`planner` field).
+---
 
-An experimental separate deterministic agent can instead run locally. Use the same
-nonempty, randomly generated `VERITAS_AGENT_TOKEN` in both processes, and set
-`VERITAS_AGENT_URL=http://127.0.0.1:8001` **only on the Harness process**:
+## Documentation
 
-```sh
-VERITAS_AGENT_TOKEN="<local-secret>" .venv/bin/uvicorn agent_service:app --host 127.0.0.1 --port 8001
-VERITAS_AGENT_TOKEN="<local-secret>" VERITAS_AGENT_URL=http://127.0.0.1:8001 .venv/bin/uvicorn veritas_harness:app --host 127.0.0.1 --port 8002
-.venv/bin/python tests/test_agent_service.py
-```
+- **Enterprise Runbook:** [docs/ENTERPRISE_RUNBOOK.md](docs/ENTERPRISE_RUNBOOK.md)
+- **Project Status & Verification:** [docs/STATUS.md](docs/STATUS.md)
+- **Build 2036 Pitch Deck:** [docs/VERITAS_AI_Build2036_Deck.pptx](docs/VERITAS_AI_Build2036_Deck.pptx)
+- **Pitch Deck Reference & Guardrails:** [docs/PITCH_DECK_REFERENCE.md](docs/PITCH_DECK_REFERENCE.md)
+- **Submission & Judge Guide:** [docs/submission.md](docs/submission.md)
+- **API Contract Snapshot:** [docs/openapi.json](docs/openapi.json)
 
-The agent returns proposals only. The Harness validates them and applies policy.
-If the configured agent is unavailable, unauthorized, or returns malformed data,
-the Harness denies the proposal rather than silently switching planners. This
-shared-token HTTP connection is for localhost testing, not production service
-authentication or network isolation.
+---
 
-For the optional two-service local Compose configuration, set
-`VERITAS_AGENT_TOKEN` in your environment, then run:
+## Scope Transparency & Claim Guardrails
 
-```sh
-docker compose -f docker-compose.yml -f docker-compose.agent.yml up --build
-```
-
-The agent has no published host port in this configuration. This does not
-establish a production network or credential isolation boundary.
-
-## Anchoring
-
-Default anchor is a local row: `pending` until an admin confirms it (or the internal
-token route does). Public verification never treats `pending` as verified.
-
-Optional single-node EVM adapter (no contract, digest goes in tx calldata):
-
-```sh
-export VERITAS_ANCHOR_RPC_URL=http://localhost:8545
-export VERITAS_ANCHOR_FROM=0x...   # funded, node-managed account
-curl -s -X POST localhost:8002/internal/v1/anchors/sweep -H 'X-Internal-Token: dev-internal'
-```
-
-On issuance the Harness tries one `eth_sendTransaction`; success stores the tx hash
-(`submitted`), failure keeps the anchor `pending` with `last_error` while the receipt
-stays durable. `sweep` retries pending anchors and confirms `submitted` ones only
-when `eth_getTransactionByHash` returns matching calldata; a mismatch becomes
-`failed`. While the adapter is configured, manual confirm returns `409 ANCHOR_MODE`.
-This is one dev node: it proves the client and read-back logic, not consensus.
-
-## Observability and keys
-
-- `GET /health/live`, `GET /health/ready`; every response carries `X-Correlation-ID`.
-- Request bodies above `VERITAS_MAX_BODY_BYTES` (default 65536) are rejected with `413`
-  before routing. The check trusts the declared `Content-Length`; chunked bodies are not measured.
-- `GET /metrics` (Prometheus text) requires `X-Internal-Token`. It exposes request
-  counters plus execution, denial, tool-call, receipt, anchor and approval gauges.
-- `VERITAS_LOG_JSON=1` turns each request into one JSON line (method, path, status,
-  duration, correlation ID) on stdout.
-- `VERITAS_SIGNING_SEED` (64 hex chars) injects the Ed25519 seed instead of the
-  SQLite-stored one; restarting with the same seed keeps the same `key_id`.
-- `docs/openapi.json` is the frozen contract; `tests/test_openapi.py` fails when the
-  app changes without regenerating it.
-
-## Honest limits
-
-- Anchor is a local mock by default; the optional EVM adapter writes the digest as tx
-  calldata on one dev node — no contract, no consensus proof.
-- Only Harness-mediated egress is checked. Provider calls and direct agent networking are uncovered.
-- The LLM adapter is exercised against a fake OpenAI-compatible server only; no real model or
-  provider has been tested, and injection behaviour through one remains unproven.
-- Rule-based egress checks are not DLP.
-- SQLite single connection, single process; org scope comes from the token, but the demo
-  UI and egress table remain single-org.
-- No streaming/body-as-you-read cap: the 413 check uses the declared length, so a malicious
-  client that omits `Content-Length` is not stopped by it.
+- **Blockchain Anchoring:** Defaults to a local mock anchor unless `VERITAS_ANCHOR_RPC_URL` is configured to point at an EVM / Hyperledger Besu node.
+- **Target Connectors:** Default ERP and Email integrations target the included `erp_sandbox` (`:8003`) and `mail_sandbox` (`:8025`) services for reproducible evaluation.
+- **Demo Authentication Bypass:** Pre-seeded demo credentials and role-switch helpers are enabled by default for frictionless judge testing and should be disabled behind PKCE OIDC in production cutover.
+- **Mediated Governance Scope:** Outbound inspection covers traffic mediated through the VERITAS Harness; direct external calls made outside the Harness boundary are out of scope.
+- **Benchmarking Note:** Reported test counts reflect actual local/Compose suite runs; large-scale concurrent production load benchmarking has not yet been executed.
