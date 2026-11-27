@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: veritas-ai-backend
+    runtime: docker
+    dockerfilePath: ./deploy/huggingface/backend/Dockerfile
+    plan: free
+    healthCheckPath: /health/live
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: VERITAS_ERP_ADAPTER
+        value: webhook
+      - key: VERITAS_ERP_WEBHOOK_URL
+        value: http://127.0.0.1:8003/api/erp/webhook
+      - key: VERITAS_ALLOW_INSECURE_WEBHOOKS
+        value: "1"
+      - key: VERITAS_SSO_BYPASS
+        value: "1"
+      - key: VERITAS_AUTH_TEST_MODE
+        value: "1"
+      - key: VERITAS_AGENT_TOKEN
+        generateValue: true
+      - key: VERITAS_INTERNAL_TOKEN
+        generateValue: true
+      - key: VERITAS_PUBLIC_URL
+        sync: false
+      - key: VERITAS_CORS_ORIGINS
+        sync: false
