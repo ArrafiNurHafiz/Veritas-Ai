@@ -4,8 +4,6 @@
 
 <img src="docs/veritas-readme-logo.png" alt="VERITAS AI — Control Before Action" width="400" />
 
-# VERITAS AI
-
 ### **Control Before Action** — Deterministic Runtime Governance Harness for Enterprise AI Agents
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ArrafiNurHafiz/Veritas-Ai/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI)](https://github.com/ArrafiNurHafiz/Veritas-Ai/actions)
