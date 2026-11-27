@@ -1,11 +1,13 @@
 """External tool and outbound egress adapters with SSRF protection and HMAC signing."""
 from __future__ import annotations
 
+from datetime import date
 import hashlib
 import hmac
 import ipaddress
 import os
 import socket
+import time
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
@@ -168,6 +170,163 @@ def build_erp_payload(
     }
 
 
+def _odoo_jsonrpc_url(raw_url: str) -> str:
+    base = raw_url.strip().rstrip("/")
+    return base if base.endswith("/jsonrpc") else f"{base}/jsonrpc"
+
+
+def _odoo_rpc_call(rpc_url: str, service: str, method: str, args: list[Any]) -> Any:
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {"service": service, "method": method, "args": args},
+        "id": int(time.time() * 1000) % 1_000_000,
+    }
+    try:
+        resp = httpx.post(rpc_url, json=payload, timeout=10.0)
+    except httpx.HTTPError as exc:
+        raise AdapterDeliveryError(f"Odoo JSON-RPC request failed: {exc}") from exc
+    if resp.status_code >= 400:
+        raise AdapterDeliveryError(f"Odoo JSON-RPC returned HTTP {resp.status_code}")
+    data = resp.json()
+    if "error" in data:
+        err = data["error"]
+        msg = err.get("data", {}).get("message") or err.get("message") or str(err)
+        raise AdapterDeliveryError(f"Odoo JSON-RPC error: {msg}")
+    return data.get("result")
+
+
+def _execute_odoo_jsonrpc(
+    *,
+    erp_url: str,
+    execution_id: str,
+    tenant_id: str,
+    tool_name: str,
+    arguments: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Execute an ERP tool directly against a real Odoo instance via JSON-RPC 2.0."""
+    validate_outbound_url(erp_url)
+    rpc_url = _odoo_jsonrpc_url(erp_url)
+    db = os.environ.get("VERITAS_ODOO_DB", "").strip()
+    username = os.environ.get("VERITAS_ODOO_USERNAME", "admin").strip()
+    secret = (
+        os.environ.get("VERITAS_ODOO_API_KEY", "").strip()
+        or os.environ.get("VERITAS_ODOO_PASSWORD", "admin").strip()
+    )
+
+    uid = _odoo_rpc_call(rpc_url, "common", "authenticate", [db, username, secret, {}])
+    if not uid:
+        raise AdapterDeliveryError("Odoo JSON-RPC authentication failed.")
+
+    args = dict(arguments)
+    vendor_ref = str(
+        args.get("vendor_code") or args.get("vendor") or args.get("account_code") or "V-DEFAULT"
+    ).strip()
+
+    if tool_name == "check_vendor_status":
+        rows = _odoo_rpc_call(
+            rpc_url,
+            "object",
+            "execute_kw",
+            [db, uid, secret, "res.partner", "search_read", [[["ref", "=", vendor_ref]]], {"fields": ["id", "name", "ref", "supplier_rank"], "limit": 1}],
+        )
+        return {
+            "mode": "odoo_jsonrpc",
+            "adapter": "odoo",
+            "tool": tool_name,
+            "execution_id": execution_id,
+            "status_code": 200,
+            "odoo_db": db,
+            "vendor_found": bool(rows),
+            "vendor": rows[0] if rows else None,
+        }
+
+    # Resolve or auto-create supplier partner in Odoo
+    partner_ids = _odoo_rpc_call(
+        rpc_url,
+        "object",
+        "execute_kw",
+        [db, uid, secret, "res.partner", "search", [[["ref", "=", vendor_ref]]], {"limit": 1}],
+    )
+    if partner_ids:
+        partner_id = int(partner_ids[0])
+    else:
+        partner_id = int(
+            _odoo_rpc_call(
+                rpc_url,
+                "object",
+                "execute_kw",
+                [db, uid, secret, "res.partner", "create", [{"name": vendor_ref, "ref": vendor_ref, "supplier_rank": 1, "is_company": True}]],
+            )
+        )
+
+    if tool_name == "approve_invoice":
+        invoice_ref = str(args.get("invoice_id") or args.get("reference_id") or execution_id)
+        amount = float(args.get("amount_idr") or args.get("amount") or 0)
+        desc = str(args.get("description") or f"VERITAS AI Execution {execution_id}")
+        move_vals: dict[str, Any] = {
+            "move_type": "in_invoice",
+            "partner_id": partner_id,
+            "ref": f"{invoice_ref} [{execution_id[:12]}]",
+            "invoice_date": date.today().isoformat(),
+            "invoice_line_ids": [
+                (0, 0, {"name": desc, "quantity": 1.0, "price_unit": amount}),
+            ],
+        }
+        currency_ids = _odoo_rpc_call(
+            rpc_url,
+            "object",
+            "execute_kw",
+            [db, uid, secret, "res.currency", "search", [[["name", "=", "IDR"]]], {"limit": 1}],
+        )
+        if currency_ids:
+            move_vals["currency_id"] = int(currency_ids[0])
+
+        move_id = int(
+            _odoo_rpc_call(
+                rpc_url,
+                "object",
+                "execute_kw",
+                [db, uid, secret, "account.move", "create", [move_vals]],
+            )
+        )
+        posted = False
+        try:
+            _odoo_rpc_call(rpc_url, "object", "execute_kw", [db, uid, secret, "account.move", "action_post", [[move_id]]])
+            posted = True
+        except AdapterDeliveryError:
+            posted = False
+        return {
+            "mode": "odoo_jsonrpc",
+            "adapter": "odoo",
+            "tool": tool_name,
+            "execution_id": execution_id,
+            "status_code": 200,
+            "odoo_db": db,
+            "odoo_partner_id": partner_id,
+            "odoo_move_id": move_id,
+            "odoo_state": "posted" if posted else "draft",
+        }
+
+    # audit_reconciliation / flag_discrepancy: log chatter note on partner
+    note = f"[VERITAS AI · {tenant_id}] {tool_name} ({execution_id}): {args}"
+    _odoo_rpc_call(
+        rpc_url,
+        "object",
+        "execute_kw",
+        [db, uid, secret, "res.partner", "message_post", [[partner_id]], {"body": note}],
+    )
+    return {
+        "mode": "odoo_jsonrpc",
+        "adapter": "odoo",
+        "tool": tool_name,
+        "execution_id": execution_id,
+        "status_code": 200,
+        "odoo_db": db,
+        "odoo_partner_id": partner_id,
+    }
+
+
 def execute_erp_tool(
     *,
     execution_id: str,
@@ -192,6 +351,14 @@ def execute_erp_tool(
         }
     adapter = resolve_erp_adapter()
     erp_url = os.environ.get("VERITAS_ERP_WEBHOOK_URL", "").strip()
+    if adapter == "odoo" and erp_url and os.environ.get("VERITAS_ODOO_DB", "").strip():
+        return _execute_odoo_jsonrpc(
+            erp_url=erp_url,
+            execution_id=execution_id,
+            tenant_id=tenant_id,
+            tool_name=tool_name,
+            arguments=arguments,
+        )
     body = build_erp_payload(
         adapter,
         execution_id=execution_id,
