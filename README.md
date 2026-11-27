@@ -252,3 +252,33 @@ cd frontend && pnpm eslint src/ && pnpm build # 13/13 static pages
 - **Demo Authentication Bypass:** Pre-seeded demo credentials and role-switch helpers are enabled by default for frictionless judge testing and should be disabled behind PKCE OIDC in production cutover.
 - **Mediated Governance Scope:** Outbound inspection covers traffic mediated through the VERITAS Harness; direct external calls made outside the Harness boundary are out of scope.
 - **Benchmarking Note:** Reported test counts reflect actual local/Compose suite runs; large-scale concurrent production load benchmarking has not yet been executed.
+
+---
+
+## Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/ArrafiNurHafiz">
+        <img src="https://github.com/ArrafiNurHafiz.png" width="84" style="border-radius:50%;" alt="ArrafiNurHafiz" /><br />
+        <sub><b>ArrafiNurHafiz</b></sub>
+      </a><br />
+      <sub>Project Lead</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/JuwitaPebriani">
+        <img src="https://github.com/JuwitaPebriani.png" width="84" style="border-radius:50%;" alt="JuwitaPebriani" /><br />
+        <sub><b>JuwitaPebriani</b></sub>
+      </a><br />
+      <sub>Contributor</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/llaayyiii">
+        <img src="https://github.com/llaayyiii.png" width="84" style="border-radius:50%;" alt="llaayyiii" /><br />
+        <sub><b>llaayyiii</b></sub>
+      </a><br />
+      <sub>Contributor</sub>
+    </td>
+  </tr>
+</table>
