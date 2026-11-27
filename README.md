@@ -56,7 +56,7 @@ flowchart LR
 
     Harness <-->|"Proposal JSON Only"| Agent
     Harness <-->|"SQLAlchemy + Hash Chain"| PG
-    Harness -->|"SSRF Guard + HMAC-SHA256"| ERP["ERP Sandbox (:8003)"]
+    Harness -->|"JSON-RPC / HMAC-SHA256 + SSRF Guard"| ERP["Odoo 17 CE (:8069) / ERP Sandbox (:8003)"]
     Harness -->|"Real SMTP STARTTLS (:587) / :8025 Fallback"| Mail["Email Approver Alert"]
 ```
 
@@ -103,10 +103,19 @@ python3 scripts/enterprise_preflight.py
 **Service Endpoints:**
 - **Web UI & API Gateway (Caddy):** `http://localhost:8090`
 - **Public Trust Explorer (No Login Required):** `http://localhost:8090/dashboard/trust`
-- **ERP Sandbox (HMAC Target):** `http://localhost:8003`
+- **ERP Target:** **Real Odoo 17 CE (`http://127.0.0.1:8069`)** when `VERITAS_ERP_ADAPTER=odoo` (or **ERP Sandbox** `:8003` as offline HMAC fallback)
 - **Approval Email Alerts:** Real **SMTP (`STARTTLS` port `587`)** when configured in `.env`, with **Mail Sandbox** (`http://localhost:8025`) as zero-config offline fallback
 
-### 2. Local Development Stack (Without Docker)
+### 2. Add Real Odoo 17 CE ERP (Optional Live Integration)
+
+```sh
+docker compose -f docker-compose.odoo.yml up -d
+.venv/bin/python scripts/setup_odoo.py
+```
+
+Set `VERITAS_ERP_ADAPTER=odoo` and `VERITAS_ERP_WEBHOOK_URL=http://127.0.0.1:8069` in `.env` so approved invoices post directly as real Vendor Bills (`account.move`) in Odoo 17.
+
+### 3. Local Development Stack (Without Docker)
 
 ```sh
 python3 -m venv .venv
@@ -114,9 +123,9 @@ python3 -m venv .venv
 ./start_local.sh
 ```
 
-`start_local.sh` launches the local Enterprise Harness, Agent Service, ERP/Mail sandboxes, and Next.js frontend.
+`start_local.sh` launches the Enterprise Harness (`:8002`), Agent Service (`:8001`), and Next.js frontend (`:3000`), and automatically skips `erp_sandbox` / `mail_sandbox` when real Odoo (`VERITAS_ERP_ADAPTER=odoo`) or real SMTP is configured.
 
-### 3. Legacy Single-Service Slice (`veritas_harness.py`)
+### 4. Legacy Single-Service Slice (`veritas_harness.py`)
 
 For lightweight single-process SQLite testing (`:8002`):
 
@@ -132,7 +141,7 @@ For lightweight single-process SQLite testing (`:8002`):
 1. **Multi-Role Login:** Open `http://localhost:8090/login` and sign in with the pre-seeded demo personas (or switch roles across **Operator**, **Approver**, and **Admin**).
 2. **Auto-Allow (`<= Rp 5M`):** In **Task Center** (`/dashboard/tasks`), dispatch an invoice of `Rp 3,200,000` to allowlisted vendor `V-ABC` -> immediately transitions to `ALLOWED` / `SUCCEEDED` with an **Ed25519 receipt**.
 3. **Human Gate (`Rp 5M–25M`):** Dispatch `Rp 8,500,000` -> pauses at `WAITING_APPROVAL` with **`0` downstream tool calls**, and dispatches a real **SMTP (`STARTTLS`)** approval notification email (or captures locally in `:8025` when running offline without SMTP credentials).
-4. **Separation of Duties & Commit:** Attempting to approve as the same Operator returns **`403 SEPARATION_OF_DUTIES`**. Sign in as **Approver** in `/dashboard/approvals` and approve -> Anti-TOCTOU revalidation passes and commits to **ERP Sandbox** (`:8003`).
+4. **Separation of Duties & Commit:** Attempting to approve as the same Operator returns **`403 SEPARATION_OF_DUTIES`**. Sign in as **Approver** in `/dashboard/approvals` and approve -> Anti-TOCTOU revalidation passes and commits a real Vendor Bill to **Odoo 17 CE (`:8069`)** (or **ERP Sandbox** `:8003` offline).
 5. **1-Byte Tamper Test:** Open **Public Trust Explorer** (`/dashboard/trust`), inspect any signed receipt, and trigger the **1-Byte Tamper Simulation** -> Ed25519 signature verification immediately **FAILS**.
 
 ### Pre-Seeded Demo Personas
@@ -167,7 +176,7 @@ Run the full test suite:
 Or run individual suites:
 
 ```sh
-# Enterprise & PostgreSQL 16 integration suite (49 tests, 0 skipped)
+# Enterprise, Odoo adapter & PostgreSQL 16 integration suite
 .venv/bin/pytest -q
 
 # Legacy slice acceptance, E2E restart-durability, seed & OpenAPI contract checks
@@ -176,6 +185,7 @@ Or run individual suites:
 .venv/bin/python tests/test_seed.py           # 9 seed checks
 .venv/bin/python tests/test_openapi.py        # 9 OpenAPI contract checks
 .venv/bin/python tests/test_agent_service.py  # Agent isolation checks
+.venv/bin/pytest tests/test_odoo_adapter.py -q # Odoo 17 JSON-RPC adapter checks
 
 # Frontend lint & production build
 cd frontend && pnpm eslint src/ && pnpm build # 13/13 static pages
@@ -194,10 +204,11 @@ cd frontend && pnpm eslint src/ && pnpm build # 13/13 static pages
 ├── agent_service.py            # Isolated proposal-only agent microservice (:8001)
 ├── llm_planner.py              # Deterministic fallback & OpenAI-compatible structured planner
 ├── veritas_harness.py          # Standalone SQLite slice for lightweight local testing (:8002)
-├── scripts/                    # enterprise_preflight.py, run_all_tests.sh, backup_postgres.sh, restore_postgres.sh
-├── tests/                      # Pytest enterprise, PostgreSQL, sandbox, E2E, and contract suites
+├── scripts/                    # enterprise_preflight.py, setup_odoo.py, run_all_tests.sh, backup/restore_postgres.sh
+├── tests/                      # Pytest enterprise, Odoo adapter, PostgreSQL, sandbox, E2E, and contract suites
 ├── docs/                       # Architecture docs, PRD, Runbook, Pitch Deck (.pptx), OpenAPI spec
 ├── Caddyfile                   # Reverse proxy config (:8090 / TLS-ready :443)
+├── docker-compose.odoo.yml     # Optional live Odoo 17 CE + PostgreSQL stack (:8069)
 └── docker-compose.enterprise.yml
 ```
 
@@ -217,7 +228,7 @@ cd frontend && pnpm eslint src/ && pnpm build # 13/13 static pages
 ## Scope Transparency & Claim Guardrails
 
 - **Blockchain Anchoring:** Defaults to a local mock anchor unless `VERITAS_ANCHOR_RPC_URL` is configured to point at an EVM / Hyperledger Besu node.
-- **Target Connectors:** ERP integration targets `erp_sandbox` (`:8003`, HMAC-SHA256) to simulate Odoo/SAP webhooks; Email notifications already use **real SMTP (`STARTTLS`)** with `mail_sandbox` (`:8025`) available as an offline Compose fallback.
+- **Target Connectors:** Supports **real Odoo 17 CE (`:8069`, JSON-RPC `account.move`)** and **real SMTP (`STARTTLS` port `587`)** when configured in `.env`, with `erp_sandbox` (`:8003`) and `mail_sandbox` (`:8025`) available as zero-config offline fallbacks.
 - **Demo Authentication Bypass:** Pre-seeded demo credentials and role-switch helpers are enabled by default for frictionless judge testing and should be disabled behind PKCE OIDC in production cutover.
 - **Mediated Governance Scope:** Outbound inspection covers traffic mediated through the VERITAS Harness; direct external calls made outside the Harness boundary are out of scope.
 - **Benchmarking Note:** Reported test counts reflect actual local/Compose suite runs; large-scale concurrent production load benchmarking has not yet been executed.
