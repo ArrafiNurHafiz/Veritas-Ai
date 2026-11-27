@@ -101,8 +101,8 @@ def _seed_vendors(uid: int) -> None:
         )
 
     vendors = [
-        ("V-ABC", "PT ABC Cloud & Infra (V-ABC)"),
-        ("V-XYZ", "CV XYZ Logistics (V-XYZ)"),
+        ("V-ABC", "PT Nusantara Cloud Tbk"),
+        ("V-XYZ", "PT Mandiri Teknologi Utama"),
     ]
     for ref, name in vendors:
         existing = _jsonrpc(

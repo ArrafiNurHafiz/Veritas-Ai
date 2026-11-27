@@ -185,8 +185,8 @@ export default function DashboardOverview() {
                   onChange={(e) => setQuickVendor(e.target.value)}
                   className="w-full bg-[#F8F8F8] border border-[#DCDCD7] rounded-xl px-3.5 py-2.5 text-[14px] text-[#192319] focus:outline-none focus:border-[#192319]"
                 >
-                  <option value="V-ABC">V-ABC (Whitelisted)</option>
-                  <option value="V-XYZ">V-XYZ (Whitelisted)</option>
+                  <option value="V-ABC">PT Nusantara Cloud Tbk</option>
+                  <option value="V-XYZ">PT Mandiri Teknologi Utama</option>
                   <option value="V-EVIL">Unknown Overseas Trading (Unverified)</option>
                 </select>
               </div>

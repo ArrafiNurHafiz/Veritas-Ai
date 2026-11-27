@@ -361,7 +361,7 @@ def _seed_tenant_defaults(session: Any, *, tenant_id: str) -> None:
                 enabled=True,
                 updated_by="system:bootstrap",
             )
-    for v_code, v_name in (("V-ABC", "PT Global Tech (ABC)"), ("V-XYZ", "PT Nusantara Cloud (XYZ)")):
+    for v_code, v_name in (("V-ABC", "PT Nusantara Cloud Tbk"), ("V-XYZ", "PT Mandiri Teknologi Utama")):
         if repo.get_vendor_by_code(session, tenant_id=tenant_id, vendor_code=v_code) is None:
             repo.upsert_vendor(
                 session,
