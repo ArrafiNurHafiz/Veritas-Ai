@@ -12,6 +12,8 @@ if str(ROOT) not in sys.path:
 # Ensure writable /tmp SQLite paths and demo-ready defaults on Vercel Serverless
 os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/enterprise.db")
 os.environ.setdefault("VERITAS_DB", "/tmp/veritas_sessions.db")
+os.environ.setdefault("VERITAS_SESSION_STORE", "jwt")
+os.environ.setdefault("VERITAS_SESSION_SECRET", "veritas-vercel-stateless-session-2026")
 os.environ.setdefault("ERP_SANDBOX_DB", "/tmp/erp_sandbox.db")
 os.environ.setdefault("VERITAS_SSO_BYPASS", "1")
 os.environ.setdefault("VERITAS_AUTH_TEST_MODE", "1")

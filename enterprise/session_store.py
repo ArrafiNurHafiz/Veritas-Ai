@@ -293,6 +293,73 @@ def configure_session_store(store: SessionStore | None) -> None:
         _STORE = store
 
 
+class JwtSessionStore:
+    """Stateless HMAC-SHA256 JWT session store for serverless multi-instance deployments."""
+
+    def __init__(self, secret: str | None = None, *, ttl_seconds: int | None = None) -> None:
+        self._ttl = ttl_seconds or _ttl_seconds()
+        self._secret = (
+            secret
+            or os.environ.get("VERITAS_SESSION_SECRET", "").strip()
+            or os.environ.get("VERITAS_AGENT_TOKEN", "").strip()
+            or "veritas-dev-jwt-secret-change-me"
+        )
+
+    def create(self, identity: Identity) -> IssuedSession:
+        import jwt as pyjwt
+
+        csrf = new_opaque_token(16)
+        csrf_hash = hash_secret(csrf)
+        now = int(time.time())
+        exp = now + self._ttl
+        payload = {
+            "uid": identity.user_id,
+            "tid": identity.tenant_id,
+            "roles": list(identity.roles),
+            "email": identity.email,
+            "csrf": csrf_hash,
+            "iat": now,
+            "exp": exp,
+        }
+        token = pyjwt.encode(payload, self._secret, algorithm="HS256")
+        if isinstance(token, bytes):
+            token = token.decode("utf-8")
+        view = SessionView(
+            identity=identity,
+            csrf_hash=csrf_hash,
+            token_hash=hash_secret(token),
+            expires_at=exp,
+        )
+        return IssuedSession(token=token, csrf_token=csrf, view=view)
+
+    def load(self, token: str) -> SessionView | None:
+        import jwt as pyjwt
+
+        if not token:
+            return None
+        try:
+            data = pyjwt.decode(token, self._secret, algorithms=["HS256"])
+        except Exception:
+            return None
+        return SessionView(
+            identity=Identity(
+                user_id=str(data["uid"]),
+                tenant_id=str(data["tid"]),
+                roles=tuple(str(r) for r in data.get("roles", [])),
+                email=str(data.get("email") or ""),
+            ),
+            csrf_hash=str(data["csrf"]),
+            token_hash=hash_secret(token),
+            expires_at=int(data["exp"]),
+        )
+
+    def revoke(self, token: str) -> bool:
+        return bool(token)
+
+    def sweep(self) -> int:
+        return 0
+
+
 def get_session_store() -> SessionStore:
     global _STORE
     if _STORE is not None:
@@ -308,6 +375,8 @@ def get_session_store() -> SessionStore:
                 dsn = db_url.replace("postgresql+psycopg://", "postgresql://", 1)
         if choice == "memory":
             _STORE = InMemorySessionStore()
+        elif choice == "jwt":
+            _STORE = JwtSessionStore()
         elif choice in {"postgres", "postgresql"} or (not choice and dsn.startswith(("postgres://", "postgresql://"))):
             if not dsn:
                 raise RuntimeError("VERITAS_SESSION_DSN or Postgres DATABASE_URL is required for the postgres session store")
@@ -315,12 +384,12 @@ def get_session_store() -> SessionStore:
         elif choice in {"", "sqlite"}:
             _STORE = SqliteSessionStore()
         else:
-            raise RuntimeError("VERITAS_SESSION_STORE must be memory, sqlite or postgres")
+            raise RuntimeError("VERITAS_SESSION_STORE must be memory, sqlite, postgres, or jwt")
         return _STORE
 
 
 __all__ = [
     "SessionView", "IssuedSession", "SessionStore", "InMemorySessionStore",
-    "SqliteSessionStore", "PostgresSessionStore", "configure_session_store",
-    "get_session_store",
+    "SqliteSessionStore", "PostgresSessionStore", "JwtSessionStore",
+    "configure_session_store", "get_session_store",
 ]
