@@ -13,10 +13,13 @@ class ToolDenied(ValueError):
 
 @dataclass(frozen=True)
 class ToolSpec:
+    """Declarative argument contract for a registered Harness tool."""
+
     name: str
     required: tuple[str, ...]
     amount_field: str | None = None
     vendor_field: str | None = None
+    enum_fields: tuple[tuple[str, frozenset[str]], ...] = ()
 
 
 DEFAULT_TOOLS: tuple[ToolSpec, ...] = (
@@ -26,7 +29,38 @@ DEFAULT_TOOLS: tuple[ToolSpec, ...] = (
         amount_field="amount_idr",
         vendor_field="vendor_id",
     ),
-    ToolSpec(name="check_vendor_status", required=("vendor_id",), vendor_field="vendor_id"),
+    ToolSpec(
+        name="check_vendor_status",
+        required=("vendor_id",),
+        vendor_field="vendor_id",
+    ),
+    ToolSpec(
+        name="audit_reconciliation",
+        required=("reference_id", "amount_idr", "account_code"),
+        amount_field="amount_idr",
+    ),
+    ToolSpec(
+        name="flag_discrepancy",
+        required=("reference_id", "severity", "reason"),
+        enum_fields=(("severity", frozenset({"low", "medium", "high", "critical"})),),
+    ),
+    ToolSpec(
+        name="provision_workspace",
+        required=("employee_id", "department", "access_tier"),
+        enum_fields=(("access_tier", frozenset({"standard", "elevated", "admin"})),),
+    ),
+    ToolSpec(
+        name="log_badge_request",
+        required=("employee_id", "zone"),
+    ),
+    ToolSpec(
+        name="scan_iam_keys",
+        required=("account_id", "scope"),
+    ),
+    ToolSpec(
+        name="revoke_stale_token",
+        required=("principal_id", "token_id", "reason"),
+    ),
 )
 
 
@@ -69,14 +103,26 @@ class ToolRegistry:
         for key in spec.required:
             if key not in arguments:
                 raise ToolDenied(f"MISSING_ARGUMENT:{key}")
-        if spec.amount_field:
-            amount = arguments[spec.amount_field]
-            if type(amount) is not int or amount <= 0:
-                raise ToolDenied("INVALID_AMOUNT")
-        if spec.vendor_field:
-            vendor = arguments[spec.vendor_field]
-            if not isinstance(vendor, str) or not vendor.strip():
-                raise ToolDenied("INVALID_VENDOR")
+            if key == spec.amount_field:
+                amount = arguments[key]
+                if type(amount) is not int or amount <= 0:
+                    raise ToolDenied("INVALID_AMOUNT")
+            elif key == spec.vendor_field:
+                vendor = arguments[key]
+                if not isinstance(vendor, str) or not vendor.strip():
+                    raise ToolDenied("INVALID_VENDOR")
+            elif key == "invoice_id":
+                invoice_id = arguments[key]
+                if not isinstance(invoice_id, str) or not invoice_id.strip():
+                    raise ToolDenied("INVALID_INVOICE_ID")
+            else:
+                val = arguments[key]
+                if not isinstance(val, str) or not val.strip():
+                    raise ToolDenied(f"INVALID_ARGUMENT:{key}")
+        for enum_field, allowed_values in spec.enum_fields:
+            raw_val = arguments.get(enum_field)
+            if not isinstance(raw_val, str) or raw_val.strip().lower() not in allowed_values:
+                raise ToolDenied(f"INVALID_ARGUMENT:{enum_field}")
         invoice_id = arguments.get("invoice_id")
         if invoice_id is not None and (not isinstance(invoice_id, str) or not invoice_id.strip()):
             raise ToolDenied("INVALID_INVOICE_ID")

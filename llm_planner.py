@@ -47,16 +47,27 @@ def propose(payload: dict) -> tuple[dict | None, str]:
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             # A configured remote agent must fail closed, not silently change planners.
             return {}, "agent_unavailable"
-    base = os.environ.get("VERITAS_LLM_BASE_URL", "").rstrip("/")
-    key = os.environ.get("VERITAS_LLM_API_KEY", "")
-    model = os.environ.get("VERITAS_LLM_MODEL", "gpt-4o-mini")
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip() or os.environ.get("VERITAS_LLM_API_KEY", "").strip()
+    base = (
+        os.environ.get("VERITAS_LLM_BASE_URL", "").strip()
+        or ("https://openrouter.ai/api/v1" if os.environ.get("OPENROUTER_API_KEY", "").strip() else "")
+    ).rstrip("/")
+    model = (
+        os.environ.get("OPENROUTER_MODEL", "").strip()
+        or os.environ.get("VERITAS_LLM_MODEL", "").strip()
+        or ("openai/gpt-4o-mini" if "openrouter.ai" in base else "gpt-4o-mini")
+    )
     if not base or not key:
         return None, "deterministic"
+    headers = {"Authorization": f"Bearer {key}"}
+    if "openrouter.ai" in base:
+        headers["HTTP-Referer"] = os.environ.get("VERITAS_PUBLIC_URL", "http://localhost:3000")
+        headers["X-Title"] = "VERITAS AI"
     try:
         response = httpx.post(
             f"{base}/chat/completions",
             timeout=10,
-            headers={"Authorization": f"Bearer {key}"},
+            headers=headers,
             json={
                 "model": model,
                 "temperature": 0,

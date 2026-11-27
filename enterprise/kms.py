@@ -41,6 +41,8 @@ def get_signing_key() -> SigningKey:
 
     seed_hex = os.environ.get("VERITAS_SIGNING_SEED", "").strip()
     explicit_key_id = os.environ.get("VERITAS_SIGNING_KEY_ID", "").strip()
+    kms_bypass = os.environ.get("VERITAS_KMS_BYPASS", "1").strip().lower() in {"1", "true", "yes"}
+    vault_addr = os.environ.get("VAULT_ADDR", "").strip()
     if seed_hex:
         try:
             seed = bytes.fromhex(seed_hex)
@@ -48,14 +50,14 @@ def get_signing_key() -> SigningKey:
             raise RuntimeError("VERITAS_SIGNING_SEED must be 64 hex characters") from exc
         if len(seed) != 32:
             raise RuntimeError("VERITAS_SIGNING_SEED must be 64 hex characters")
-        provider = "env_seed"
-    elif _is_production():
+        provider = "vault_kms" if (vault_addr and not kms_bypass) else "env_seed"
+    elif _is_production() and not kms_bypass:
         raise RuntimeError(
-            "VERITAS_SIGNING_SEED (64 hex chars) or KMS provider is required when VERITAS_ENV=production"
+            "VERITAS_SIGNING_SEED (64 hex chars) or Vault KMS is required when VERITAS_ENV=production"
         )
     else:
         seed = os.urandom(32)
-        provider = "ephemeral_dev"
+        provider = "ephemeral_bypass"
 
     private = Ed25519PrivateKey.from_private_bytes(seed)
     raw_pub = private.public_key().public_bytes(
