@@ -67,7 +67,7 @@
   3. **Human Gate, SoD & Expiry Sweeper:** Pemisahan pengaju vs penyetuju (`403 SEPARATION_OF_DUTIES`), *optimistic locking* (`expected_version`), dan `ApprovalExpiryWorker` latar belakang.
   4. **Anti-TOCTOU Resume Revalidation:** Memeriksa ulang `policy_version`, `args_hash`, status aktif tool & agent (`AGENT_DISABLED`), dan status blokir vendor sebelum melepaskan tool.
   5. **Ed25519 Receipt & Append-Only Audit:** Tanda tangan digital per eksekusi + rantai hash SHA-256 + database trigger yang menolak `UPDATE`/`DELETE`.
-  6. **SSRF-Guarded Connectors & Multi-Tenant Governance:** Format adapter Webhook HMAC / Odoo / SAP (`erp_sandbox`), notifikasi email SMTP (`mail_sandbox`), onboarding tenant API (`POST /api/v1/tenants`), dan Prometheus `/metrics`.
+  6. **SSRF-Guarded Connectors & Multi-Tenant Governance:** Format adapter Webhook HMAC / Odoo / SAP (`erp_sandbox`), notifikasi email **SMTP asli (`STARTTLS`)** dengan `mail_sandbox` (`:8025`) sebagai fallback lokal offline, onboarding tenant API (`POST /api/v1/tenants`), dan Prometheus `/metrics`.
 
 ---
 
@@ -158,8 +158,8 @@
 ### Slide 14 — Hackathon Requirements & Judge Verification Guide
 - **Prompt Template:** `Add as per the requirements for the hackathon:`
 - **Isi Rekomendasi:**
-  - **Panduan Uji 3 Menit untuk Juri:** (1) Login multi-peran → (2) Auto-allow `Rp 3,2 jt` + receipt → (3) Hold `Rp 8,5 jt` dengan 0 tool call + email di `:8025` → (4) Uji blokir `403` SoD & sign-off Approver → (5) Uji 1-Byte Tamper Test di Trust Explorer.
-  - **Claim Guardrails (Transparansi Teknis):** Menyatakan jujur bahwa anchor default adalah mock lokal (kecuali EVM RPC diisi), konektor target memakai sandbox lokal, bypass demo aktif untuk kemudahan evaluasi, dan pemeriksaan outbound hanya mencakup jalur yang dimediasi Harness.
+  - **Panduan Uji 3 Menit untuk Juri:** (1) Login multi-peran → (2) Auto-allow `Rp 3,2 jt` + receipt → (3) Hold `Rp 8,5 jt` dengan 0 tool call + notifikasi email **SMTP asli (`STARTTLS`)** (atau `:8025` saat offline) → (4) Uji blokir `403` SoD & sign-off Approver → (5) Uji 1-Byte Tamper Test di Trust Explorer.
+  - **Claim Guardrails (Transparansi Teknis):** Menyatakan jujur bahwa anchor default adalah mock lokal (kecuali EVM RPC diisi), konektor target ERP memakai `erp_sandbox` (`:8003`), sedangkan email sudah mendukung SMTP asli (`STARTTLS`) dengan `:8025` sebagai fallback lokal, bypass demo aktif untuk kemudahan evaluasi, dan pemeriksaan outbound hanya mencakup jalur yang dimediasi Harness.
 
 ---
 

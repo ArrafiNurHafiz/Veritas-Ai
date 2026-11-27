@@ -57,7 +57,7 @@ flowchart LR
     Harness <-->|"Proposal JSON Only"| Agent
     Harness <-->|"SQLAlchemy + Hash Chain"| PG
     Harness -->|"SSRF Guard + HMAC-SHA256"| ERP["ERP Sandbox (:8003)"]
-    Harness -->|"SMTP Alerts"| Mail["Mail Sandbox (:1025 / :8025)"]
+    Harness -->|"Real SMTP STARTTLS (:587) / :8025 Fallback"| Mail["Email Approver Alert"]
 ```
 
 ### Validated Execution State Machine
@@ -104,7 +104,7 @@ python3 scripts/enterprise_preflight.py
 - **Web UI & API Gateway (Caddy):** `http://localhost:8090`
 - **Public Trust Explorer (No Login Required):** `http://localhost:8090/dashboard/trust`
 - **ERP Sandbox (HMAC Target):** `http://localhost:8003`
-- **Mail Sandbox (SMTP Web Inbox):** `http://localhost:8025`
+- **Approval Email Alerts:** Real **SMTP (`STARTTLS` port `587`)** when configured in `.env`, with **Mail Sandbox** (`http://localhost:8025`) as zero-config offline fallback
 
 ### 2. Local Development Stack (Without Docker)
 
@@ -131,7 +131,7 @@ For lightweight single-process SQLite testing (`:8002`):
 
 1. **Multi-Role Login:** Open `http://localhost:8090/login` and sign in with the pre-seeded demo personas (or switch roles across **Operator**, **Approver**, and **Admin**).
 2. **Auto-Allow (`<= Rp 5M`):** In **Task Center** (`/dashboard/tasks`), dispatch an invoice of `Rp 3,200,000` to allowlisted vendor `V-ABC` -> immediately transitions to `ALLOWED` / `SUCCEEDED` with an **Ed25519 receipt**.
-3. **Human Gate (`Rp 5M–25M`):** Dispatch `Rp 8,500,000` -> pauses at `WAITING_APPROVAL` with **`0` downstream tool calls**, and triggers an approval notification email visible in **Mail Sandbox** (`:8025`).
+3. **Human Gate (`Rp 5M–25M`):** Dispatch `Rp 8,500,000` -> pauses at `WAITING_APPROVAL` with **`0` downstream tool calls**, and dispatches a real **SMTP (`STARTTLS`)** approval notification email (or captures locally in `:8025` when running offline without SMTP credentials).
 4. **Separation of Duties & Commit:** Attempting to approve as the same Operator returns **`403 SEPARATION_OF_DUTIES`**. Sign in as **Approver** in `/dashboard/approvals` and approve -> Anti-TOCTOU revalidation passes and commits to **ERP Sandbox** (`:8003`).
 5. **1-Byte Tamper Test:** Open **Public Trust Explorer** (`/dashboard/trust`), inspect any signed receipt, and trigger the **1-Byte Tamper Simulation** -> Ed25519 signature verification immediately **FAILS**.
 
@@ -217,7 +217,7 @@ cd frontend && pnpm eslint src/ && pnpm build # 13/13 static pages
 ## Scope Transparency & Claim Guardrails
 
 - **Blockchain Anchoring:** Defaults to a local mock anchor unless `VERITAS_ANCHOR_RPC_URL` is configured to point at an EVM / Hyperledger Besu node.
-- **Target Connectors:** Default ERP and Email integrations target the included `erp_sandbox` (`:8003`) and `mail_sandbox` (`:8025`) services for reproducible evaluation.
+- **Target Connectors:** ERP integration targets `erp_sandbox` (`:8003`, HMAC-SHA256) to simulate Odoo/SAP webhooks; Email notifications already use **real SMTP (`STARTTLS`)** with `mail_sandbox` (`:8025`) available as an offline Compose fallback.
 - **Demo Authentication Bypass:** Pre-seeded demo credentials and role-switch helpers are enabled by default for frictionless judge testing and should be disabled behind PKCE OIDC in production cutover.
 - **Mediated Governance Scope:** Outbound inspection covers traffic mediated through the VERITAS Harness; direct external calls made outside the Harness boundary are out of scope.
 - **Benchmarking Note:** Reported test counts reflect actual local/Compose suite runs; large-scale concurrent production load benchmarking has not yet been executed.
