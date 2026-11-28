@@ -36,17 +36,45 @@ export default function SettingsPage() {
   const [tenantNameInput, setTenantNameInput] = useState('');
   const [creatingTenant, setCreatingTenant] = useState(false);
 
+  const [erpConfig, setErpConfig] = useState<api.ErpConfigView | null>(null);
+  const [erpAdapter, setErpAdapter] = useState<api.ErpAdapterType>('custom_rest');
+  const [erpUrl, setErpUrl] = useState('');
+  const [erpAuthType, setErpAuthType] = useState<api.ErpAuthType>('bearer');
+  const [erpAuthHeader, setErpAuthHeader] = useState('X-API-Key');
+  const [erpApiKey, setErpApiKey] = useState('');
+  const [erpHmacSecret, setErpHmacSecret] = useState('');
+  const [erpOdooDb, setErpOdooDb] = useState('');
+  const [erpOdooUser, setErpOdooUser] = useState('admin');
+  const [erpFieldMapping, setErpFieldMapping] = useState('');
+  const [savingErp, setSavingErp] = useState(false);
+  const [testingErp, setTestingErp] = useState(false);
+
   useEffect(() => {
     if (!api.IS_ENTERPRISE) return;
     let active = true;
     Promise.all([
       api.getTools().catch(() => null),
       isAdmin ? api.getUsers().catch(() => null) : Promise.resolve(null),
+      isAdmin ? api.getErpConfig().catch(() => null) : Promise.resolve(null),
     ])
-      .then(([toolsRes, usersRes]) => {
+      .then(([toolsRes, usersRes, erpRes]) => {
         if (!active) return;
         if (toolsRes?.tools) setTools(toolsRes.tools);
         if (usersRes?.users) setUsers(usersRes.users);
+        if (erpRes) {
+          setErpConfig(erpRes);
+          setErpAdapter(erpRes.adapter);
+          setErpUrl(erpRes.endpoint_url || '');
+          setErpAuthType(erpRes.auth_type || 'none');
+          setErpAuthHeader(erpRes.auth_header || 'Authorization');
+          setErpOdooDb(erpRes.odoo_db || '');
+          setErpOdooUser(erpRes.odoo_username || 'admin');
+          setErpFieldMapping(
+            erpRes.field_mapping && Object.keys(erpRes.field_mapping).length > 0
+              ? JSON.stringify(erpRes.field_mapping, null, 2)
+              : '',
+          );
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -116,6 +144,82 @@ export default function SettingsPage() {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to create company tenant.');
     } finally {
       setCreatingTenant(false);
+    }
+  };
+
+  const buildErpPayload = (): api.ErpConfigPayload => {
+    let parsedMapping: Record<string, string> | undefined;
+    if (erpFieldMapping.trim()) {
+      const raw = JSON.parse(erpFieldMapping);
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        throw new Error('Field mapping must be a JSON object (e.g. {"amount_idr": "total"}).');
+      }
+      parsedMapping = raw as Record<string, string>;
+    }
+    return {
+      adapter: erpAdapter,
+      endpoint_url: erpAdapter === 'local_ledger' ? null : erpUrl.trim(),
+      auth_type: erpAuthType,
+      auth_header: erpAuthHeader.trim() || 'Authorization',
+      api_key: erpApiKey.trim() || undefined,
+      hmac_secret: erpHmacSecret.trim() || undefined,
+      odoo_db: erpAdapter === 'odoo' ? erpOdooDb.trim() : undefined,
+      odoo_username: erpAdapter === 'odoo' ? erpOdooUser.trim() : undefined,
+      field_mapping: parsedMapping,
+      enabled: true,
+    };
+  };
+
+  const handleSaveErp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !api.IS_ENTERPRISE) return;
+    setSavingErp(true);
+    setErrorMsg(null);
+    setFeedback(null);
+    try {
+      const saved = await api.saveErpConfig(buildErpPayload());
+      setErpConfig(saved);
+      setErpApiKey('');
+      setErpHmacSecret('');
+      setFeedback(`Custom ERP connector "${saved.adapter}" saved for tenant ${saved.tenant_id}.`);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to save ERP configuration.');
+    } finally {
+      setSavingErp(false);
+    }
+  };
+
+  const handleTestErp = async () => {
+    if (!isAdmin || !api.IS_ENTERPRISE) return;
+    setTestingErp(true);
+    setErrorMsg(null);
+    setFeedback(null);
+    try {
+      const res = await api.testErpConfig(buildErpPayload());
+      setFeedback(`ERP connection test OK (${res.adapter}, HTTP ${res.status_code}): ${res.detail}`);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'ERP connection test failed.');
+    } finally {
+      setTestingErp(false);
+    }
+  };
+
+  const handleResetErp = async () => {
+    if (!isAdmin || !api.IS_ENTERPRISE) return;
+    setErrorMsg(null);
+    setFeedback(null);
+    try {
+      await api.deleteErpConfig();
+      const fresh = await api.getErpConfig();
+      setErpConfig(fresh);
+      setErpAdapter(fresh.adapter);
+      setErpUrl('');
+      setErpApiKey('');
+      setErpHmacSecret('');
+      setErpFieldMapping('');
+      setFeedback('Reverted tenant ERP connector to server default.');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to reset ERP configuration.');
     }
   };
 
@@ -271,6 +375,193 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {/* Custom ERP Connector (Enterprise Admin) */}
+        {api.IS_ENTERPRISE && isAdmin && (
+          <div className="bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm space-y-5 lg:col-span-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#F0F0EC] flex items-center justify-center text-[#192319]">
+                  <Server className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-[20px] text-[#192319]">Custom ERP Connector</h3>
+                  <p className="text-[12px] text-[#2D372D]">
+                    Connect your company&apos;s own ERP (Odoo, SAP, Accurate/Jurnal/Mekari, or Custom REST Webhook)
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-[#F0F0EC] text-[#192319]">
+                {erpConfig?.source === 'tenant_custom' ? `Custom: ${erpConfig.adapter}` : `Default: ${erpConfig?.adapter || 'server_default'}`}
+              </span>
+            </div>
+
+            <form onSubmit={handleSaveErp} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label className="space-y-1 text-[12px] text-[#2D372D]">
+                  <span>ERP Adapter</span>
+                  <select
+                    value={erpAdapter}
+                    onChange={(e) => setErpAdapter(e.target.value as api.ErpAdapterType)}
+                    className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] bg-[#F7F7F5]"
+                  >
+                    <option value="custom_rest">Custom REST API / Webhook</option>
+                    <option value="odoo">Odoo (JSON-RPC 2.0)</option>
+                    <option value="sap">SAP / Enterprise Gateway</option>
+                    <option value="webhook">Standard Webhook</option>
+                    <option value="local_ledger">Local In-Process Ledger</option>
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-[12px] text-[#2D372D] md:col-span-2">
+                  <span>Endpoint URL (HTTPS required in production)</span>
+                  <input
+                    type="url"
+                    disabled={erpAdapter === 'local_ledger'}
+                    required={erpAdapter !== 'local_ledger'}
+                    placeholder={erpAdapter === 'odoo' ? 'https://odoo.company.co.id' : 'https://erp.company.co.id/api/veritas/hook'}
+                    value={erpUrl}
+                    onChange={(e) => setErpUrl(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] font-mono bg-[#F7F7F5] disabled:opacity-50"
+                  />
+                </label>
+              </div>
+
+              {erpAdapter !== 'local_ledger' && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label className="space-y-1 text-[12px] text-[#2D372D]">
+                    <span>Authentication Type</span>
+                    <select
+                      value={erpAuthType}
+                      onChange={(e) => setErpAuthType(e.target.value as api.ErpAuthType)}
+                      className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] bg-[#F7F7F5]"
+                    >
+                      <option value="bearer">Bearer Token</option>
+                      <option value="api_key">Custom API Key Header</option>
+                      <option value="hmac">HMAC-SHA256 Signature</option>
+                      <option value="basic">Basic Auth</option>
+                      <option value="odoo_jsonrpc">Odoo JSON-RPC Credentials</option>
+                      <option value="none">None</option>
+                    </select>
+                  </label>
+
+                  {erpAuthType === 'api_key' && (
+                    <label className="space-y-1 text-[12px] text-[#2D372D]">
+                      <span>Header Name</span>
+                      <input
+                        type="text"
+                        placeholder="X-API-Key"
+                        value={erpAuthHeader}
+                        onChange={(e) => setErpAuthHeader(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] font-mono bg-[#F7F7F5]"
+                      />
+                    </label>
+                  )}
+
+                  {erpAdapter === 'odoo' && (
+                    <>
+                      <label className="space-y-1 text-[12px] text-[#2D372D]">
+                        <span>Odoo Database</span>
+                        <input
+                          type="text"
+                          required
+                          placeholder="veritas_prod"
+                          value={erpOdooDb}
+                          onChange={(e) => setErpOdooDb(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] font-mono bg-[#F7F7F5]"
+                        />
+                      </label>
+                      <label className="space-y-1 text-[12px] text-[#2D372D]">
+                        <span>Odoo Username</span>
+                        <input
+                          type="text"
+                          placeholder="admin"
+                          value={erpOdooUser}
+                          onChange={(e) => setErpOdooUser(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] font-mono bg-[#F7F7F5]"
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  <label className="space-y-1 text-[12px] text-[#2D372D]">
+                    <span>
+                      {erpAdapter === 'odoo' ? 'Odoo API Key / Password' : 'API Key / Bearer Token'}{' '}
+                      {erpConfig?.has_api_key && (
+                        <span className="font-mono text-emerald-700">({erpConfig.api_key_masked})</span>
+                      )}
+                    </span>
+                    <input
+                      type="password"
+                      placeholder={erpConfig?.has_api_key ? 'Leave blank to keep existing secret' : 'Enter API key / token'}
+                      value={erpApiKey}
+                      onChange={(e) => setErpApiKey(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] font-mono bg-[#F7F7F5]"
+                    />
+                  </label>
+
+                  {erpAdapter !== 'odoo' && (
+                    <label className="space-y-1 text-[12px] text-[#2D372D]">
+                      <span>
+                        HMAC Signing Secret{' '}
+                        {erpConfig?.has_hmac_secret && (
+                          <span className="font-mono text-emerald-700">({erpConfig.hmac_secret_masked})</span>
+                        )}
+                      </span>
+                      <input
+                        type="password"
+                        placeholder={erpConfig?.has_hmac_secret ? 'Leave blank to keep existing secret' : 'Optional HMAC-SHA256 secret'}
+                        value={erpHmacSecret}
+                        onChange={(e) => setErpHmacSecret(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[13px] text-[#192319] font-mono bg-[#F7F7F5]"
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
+
+              {(erpAdapter === 'custom_rest' || erpAdapter === 'webhook') && (
+                <label className="block space-y-1 text-[12px] text-[#2D372D]">
+                  <span>Optional Field Mapping JSON (maps VERITAS fields to your ERP payload keys)</span>
+                  <textarea
+                    rows={2}
+                    placeholder='{"amount_idr": "total_amount", "vendor_code": "supplier_id"}'
+                    value={erpFieldMapping}
+                    onChange={(e) => setErpFieldMapping(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-[#DCDCD7] text-[12px] text-[#192319] font-mono bg-[#F7F7F5]"
+                  />
+                </label>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                <button
+                  type="submit"
+                  disabled={savingErp}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#192319] text-[#F7F7F5] text-[12px] font-medium hover:bg-[#2D372D] disabled:opacity-50"
+                >
+                  {savingErp ? 'Saving...' : 'Save ERP Connector'}
+                </button>
+                <button
+                  type="button"
+                  disabled={testingErp}
+                  onClick={handleTestErp}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#DCDCD7] bg-[#F7F7F5] text-[#192319] text-[12px] font-medium hover:bg-[#EFEFEA] disabled:opacity-50"
+                >
+                  {testingErp ? 'Testing...' : 'Test Connection'}
+                </button>
+                {erpConfig?.configured && (
+                  <button
+                    type="button"
+                    onClick={handleResetErp}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-700 text-[12px] font-medium hover:bg-rose-50"
+                  >
+                    Reset to Default
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* Tool Registry Controls (Enterprise) or Anchor Status */}
         <div className="bg-white rounded-2xl p-6 border border-[#DCDCD7] shadow-sm space-y-5">

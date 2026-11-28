@@ -1051,6 +1051,114 @@ class EnterpriseAppTests(unittest.TestCase):
         self.assertEqual(acme_exec.status_code, 202, acme_exec.text)
         self.assertEqual(acme_exec.json()["status"], "SUCCEEDED")
 
+    def test_custom_erp_connector_per_tenant_and_ssrf_guard(self) -> None:
+        from unittest.mock import patch
+        from enterprise import adapters
+
+        # 1. Non-admin cannot read or mutate ERP config
+        self.identity("op-1", "operator")
+        self.assertEqual(self.client.get("/api/v1/erp/config").status_code, 403)
+        self.assertEqual(
+            self.client.put(
+                "/api/v1/erp/config",
+                json={"adapter": "local_ledger", "auth_type": "none"},
+            ).status_code,
+            403,
+        )
+
+        # 2. Admin SSRF check blocks private/loopback IP for external ERP
+        self.identity("admin-1", "admin")
+        ssrf = self.client.put(
+            "/api/v1/erp/config",
+            json={
+                "adapter": "custom_rest",
+                "endpoint_url": "http://169.254.169.254/latest/meta-data",
+                "auth_type": "bearer",
+                "api_key": "secret-token-1234",
+            },
+        )
+        self.assertEqual(ssrf.status_code, 400, ssrf.text)
+        self.assertEqual(ssrf.json()["error"]["code"], "SSRF_BLOCKED")
+
+        # 3. Save custom_rest ERP for tenant (mock DNS to public IP & httpx.post)
+        with patch.object(
+            adapters.socket,
+            "getaddrinfo",
+            return_value=[(2, 1, 6, "", ("93.184.216.34", 443))],
+        ):
+            saved = self.client.put(
+                "/api/v1/erp/config",
+                json={
+                    "adapter": "custom_rest",
+                    "endpoint_url": "https://erp.nusantara.example/api/veritas",
+                    "auth_type": "api_key",
+                    "auth_header": "X-ERP-Key",
+                    "api_key": "erp-secret-9876",
+                    "hmac_secret": "hmac-secret-4321",
+                    "field_mapping": {"tool": "action_name"},
+                },
+            )
+            self.assertEqual(saved.status_code, 200, saved.text)
+            body = saved.json()
+            self.assertEqual(body["adapter"], "custom_rest")
+            self.assertEqual(body["source"], "tenant_custom")
+            self.assertTrue(body["has_api_key"])
+            self.assertEqual(body["api_key_masked"], "••••9876")
+            self.assertNotIn("erp-secret-9876", saved.text)
+            self.assertNotIn("hmac-secret-4321", saved.text)
+
+            # Updating without api_key preserves existing encrypted secret
+            updated = self.client.put(
+                "/api/v1/erp/config",
+                json={
+                    "adapter": "custom_rest",
+                    "endpoint_url": "https://erp.nusantara.example/api/v2/veritas",
+                    "auth_type": "api_key",
+                    "auth_header": "X-ERP-Key",
+                    "field_mapping": {"tool": "action_name"},
+                },
+            )
+            self.assertEqual(updated.status_code, 200, updated.text)
+            self.assertEqual(updated.json()["api_key_masked"], "••••9876")
+
+            # Test connection endpoint & live tool dispatch use tenant config
+            class _Resp:
+                status_code = 200
+
+            with patch.object(adapters.httpx, "post", return_value=_Resp()) as mock_post:
+                tested = self.client.post("/api/v1/erp/test")
+                self.assertEqual(tested.status_code, 200, tested.text)
+                self.assertTrue(tested.json()["ok"])
+                self.assertEqual(
+                    mock_post.call_args.kwargs["headers"]["X-ERP-Key"],
+                    "erp-secret-9876",
+                )
+
+                self.identity("op-1", "operator")
+                task = self.client.post(
+                    "/api/v1/tasks",
+                    headers={"Idempotency-Key": "custom-erp-task-1"},
+                    json={
+                        "agent_id": "procurement-agent",
+                        "task_type": "invoice_review",
+                        "payload": {"vendor": "V-ABC", "amount_idr": 1500000, "invoice_id": "INV-ERP-1"},
+                    },
+                )
+                self.assertEqual(task.status_code, 202, task.text)
+                self.assertEqual(task.json()["status"], "SUCCEEDED")
+                sent_body = mock_post.call_args.kwargs["content"].decode("utf-8")
+                self.assertIn('"action_name":"approve_invoice"', sent_body)
+
+        # 4. Delete reverts tenant back to server default
+        self.identity("admin-1", "admin")
+        deleted = self.client.delete("/api/v1/erp/config")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertTrue(deleted.json()["deleted"])
+        reverted = self.client.get("/api/v1/erp/config")
+        self.assertEqual(reverted.status_code, 200)
+        self.assertFalse(reverted.json()["configured"])
+        self.assertEqual(reverted.json()["source"], "server_default")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

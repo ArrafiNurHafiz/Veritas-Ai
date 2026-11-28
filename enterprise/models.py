@@ -8,6 +8,8 @@ database trigger rejects any direct mutation.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -15,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -341,6 +344,25 @@ class AgentConfig(Base, TimestampMixin):
     )
 
 
+class TenantErpConfig(Base, TimestampMixin):
+    __tablename__ = "tenant_erp_configs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = _tenant_key()
+    adapter: Mapped[str] = mapped_column(String(32), nullable=False, default="webhook")
+    endpoint_url: Mapped[str | None] = mapped_column(Text)
+    auth_type: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
+    auth_header: Mapped[str] = mapped_column(String(64), nullable=False, default="Authorization")
+    credentials_encrypted: Mapped[str | None] = mapped_column(Text)
+    field_mapping: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_by: Mapped[str | None] = mapped_column(String(128))
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_tenant_erp_configs_tenant"),
+    )
+
+
 # --------------------------------------------------------------------------- append-only guard
 
 
@@ -403,4 +425,5 @@ ALL_MODELS = (
     ToolCall,
     Vendor,
     AgentConfig,
+    TenantErpConfig,
 )

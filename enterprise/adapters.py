@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 from datetime import date
+import base64
 import hashlib
 import hmac
 import ipaddress
+import json
 import os
 import socket
 import time
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+from cryptography.fernet import Fernet, InvalidToken
 import httpx
 
 from .hashing import canonical_json
@@ -102,13 +105,92 @@ def find_sensitive_fields(payload: Any) -> list[str]:
     return sorted(found)
 
 
-SUPPORTED_ERP_ADAPTERS: frozenset[str] = frozenset({"local_ledger", "webhook", "odoo", "sap"})
+SUPPORTED_ERP_ADAPTERS: frozenset[str] = frozenset({"local_ledger", "webhook", "odoo", "sap", "custom_rest"})
+ERP_AUTH_TYPES: frozenset[str] = frozenset({"none", "bearer", "api_key", "basic", "hmac", "odoo_jsonrpc"})
 ERP_TOOLS: frozenset[str] = frozenset({
     "approve_invoice",
     "check_vendor_status",
     "audit_reconciliation",
     "flag_discrepancy",
 })
+
+
+def _erp_fernet() -> Fernet:
+    seed = (
+        os.environ.get("VERITAS_ERP_ENCRYPTION_KEY", "").strip()
+        or os.environ.get("VERITAS_SIGNING_SECRET", "").strip()
+        or os.environ.get("VERITAS_SESSION_SECRET", "").strip()
+        or "veritas-dev-erp-secret-key"
+    )
+    key = base64.urlsafe_b64encode(hashlib.sha256(seed.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def encrypt_erp_credentials(creds: Mapping[str, Any]) -> str:
+    """Encrypt tenant ERP credentials at rest using Fernet symmetric encryption."""
+    clean = {str(k): str(v) for k, v in creds.items() if v is not None and str(v).strip()}
+    payload = json.dumps(clean, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return _erp_fernet().encrypt(payload).decode("utf-8")
+
+
+def decrypt_erp_credentials(token: str | None) -> dict[str, str]:
+    """Decrypt tenant ERP credentials; returns empty dict if unset or invalid."""
+    if not token:
+        return {}
+    try:
+        raw = _erp_fernet().decrypt(token.encode("utf-8"))
+        data = json.loads(raw.decode("utf-8"))
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except (InvalidToken, ValueError, TypeError):
+        return {}
+
+
+def mask_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    s = str(value).strip()
+    if len(s) <= 4:
+        return "••••"
+    return f"••••{s[-4:]}"
+
+
+def _apply_field_mapping(payload: dict[str, Any], field_mapping: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not field_mapping:
+        return payload
+    mapped = dict(payload)
+    for src_key, dst_key in field_mapping.items():
+        if not isinstance(src_key, str) or not isinstance(dst_key, str) or not dst_key.strip():
+            continue
+        if src_key in mapped:
+            mapped[dst_key.strip()] = mapped[src_key]
+        elif isinstance(mapped.get("arguments"), Mapping) and src_key in mapped["arguments"]:
+            mapped[dst_key.strip()] = mapped["arguments"][src_key]
+    return mapped
+
+
+def _build_auth_headers(
+    *,
+    auth_type: str,
+    auth_header: str,
+    creds: Mapping[str, str],
+    body_bytes: bytes,
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    api_key = creds.get("api_key", "").strip()
+    hmac_secret = creds.get("hmac_secret", "").strip()
+    if auth_type == "bearer" and api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    elif auth_type == "api_key" and api_key:
+        hdr = (auth_header or "X-API-Key").strip() or "X-API-Key"
+        headers[hdr] = api_key
+    elif auth_type == "basic" and api_key:
+        token = base64.b64encode(api_key.encode("utf-8")).decode("ascii")
+        headers["Authorization"] = f"Basic {token}"
+    elif auth_type == "none" and api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if hmac_secret:
+        headers["X-Veritas-Signature"] = f"sha256={sign_webhook_payload(body_bytes, hmac_secret)}"
+    return headers
 
 
 def resolve_erp_adapter() -> str:
@@ -203,14 +285,18 @@ def _execute_odoo_jsonrpc(
     tenant_id: str,
     tool_name: str,
     arguments: Mapping[str, Any],
+    odoo_db: str | None = None,
+    odoo_username: str | None = None,
+    odoo_secret: str | None = None,
 ) -> dict[str, Any]:
     """Execute an ERP tool directly against a real Odoo instance via JSON-RPC 2.0."""
     validate_outbound_url(erp_url)
     rpc_url = _odoo_jsonrpc_url(erp_url)
-    db = os.environ.get("VERITAS_ODOO_DB", "").strip()
-    username = os.environ.get("VERITAS_ODOO_USERNAME", "admin").strip()
+    db = (odoo_db or os.environ.get("VERITAS_ODOO_DB", "")).strip()
+    username = (odoo_username or os.environ.get("VERITAS_ODOO_USERNAME", "admin")).strip()
     secret = (
-        os.environ.get("VERITAS_ODOO_API_KEY", "").strip()
+        (odoo_secret or "").strip()
+        or os.environ.get("VERITAS_ODOO_API_KEY", "").strip()
         or os.environ.get("VERITAS_ODOO_PASSWORD", "admin").strip()
     )
 
@@ -327,12 +413,35 @@ def _execute_odoo_jsonrpc(
     }
 
 
+def _resolve_runtime_erp(erp_config: Mapping[str, Any] | None) -> tuple[str, str, str, str, dict[str, str], dict[str, Any] | None]:
+    """Resolve effective (adapter, erp_url, auth_type, auth_header, creds, field_mapping)."""
+    if erp_config and erp_config.get("enabled", True):
+        adapter = str(erp_config.get("adapter") or "webhook").strip().lower()
+        erp_url = str(erp_config.get("endpoint_url") or "").strip()
+        auth_type = str(erp_config.get("auth_type") or "none").strip().lower()
+        auth_header = str(erp_config.get("auth_header") or "Authorization").strip()
+        creds = dict(erp_config.get("credentials") or {})
+        field_mapping = erp_config.get("field_mapping") if isinstance(erp_config.get("field_mapping"), Mapping) else None
+        return adapter, erp_url, auth_type, auth_header, creds, dict(field_mapping) if field_mapping else None
+
+    adapter = resolve_erp_adapter()
+    erp_url = os.environ.get("VERITAS_ERP_WEBHOOK_URL", "").strip()
+    creds = {
+        "api_key": os.environ.get("VERITAS_ERP_API_KEY", "").strip(),
+        "hmac_secret": os.environ.get("VERITAS_ERP_HMAC_SECRET", "").strip(),
+        "odoo_db": os.environ.get("VERITAS_ODOO_DB", "").strip(),
+        "odoo_username": os.environ.get("VERITAS_ODOO_USERNAME", "admin").strip(),
+    }
+    return adapter, erp_url, "bearer", "Authorization", creds, None
+
+
 def execute_erp_tool(
     *,
     execution_id: str,
     tenant_id: str,
     tool_name: str,
     arguments: Mapping[str, Any],
+    erp_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a validated tool call against a configured ERP connector or isolated sandbox."""
     if tool_name not in ERP_TOOLS:
@@ -349,23 +458,27 @@ def execute_erp_tool(
                 "arguments": dict(arguments),
             },
         }
-    adapter = resolve_erp_adapter()
-    erp_url = os.environ.get("VERITAS_ERP_WEBHOOK_URL", "").strip()
-    if adapter == "odoo" and erp_url and os.environ.get("VERITAS_ODOO_DB", "").strip():
+    adapter, erp_url, auth_type, auth_header, creds, field_mapping = _resolve_runtime_erp(erp_config)
+    odoo_db = creds.get("odoo_db", "").strip() or os.environ.get("VERITAS_ODOO_DB", "").strip()
+    if adapter == "odoo" and erp_url and odoo_db:
         return _execute_odoo_jsonrpc(
             erp_url=erp_url,
             execution_id=execution_id,
             tenant_id=tenant_id,
             tool_name=tool_name,
             arguments=arguments,
+            odoo_db=odoo_db,
+            odoo_username=creds.get("odoo_username"),
+            odoo_secret=creds.get("api_key"),
         )
     body = build_erp_payload(
-        adapter,
+        adapter if adapter != "custom_rest" else "webhook",
         execution_id=execution_id,
         tenant_id=tenant_id,
         tool_name=tool_name,
         arguments=arguments,
     )
+    body = _apply_field_mapping(body, field_mapping)
     if adapter == "local_ledger" or not erp_url:
         return {
             "mode": "local_ledger",
@@ -383,13 +496,8 @@ def execute_erp_tool(
         "Idempotency-Key": f"tool-{execution_id}",
         "X-Veritas-Tenant": tenant_id,
         "X-Veritas-ERP-Adapter": adapter,
+        **_build_auth_headers(auth_type=auth_type, auth_header=auth_header, creds=creds, body_bytes=body_bytes),
     }
-    erp_api_key = os.environ.get("VERITAS_ERP_API_KEY", "").strip()
-    if erp_api_key:
-        headers["Authorization"] = f"Bearer {erp_api_key}"
-    hmac_secret = os.environ.get("VERITAS_ERP_HMAC_SECRET", "").strip()
-    if hmac_secret:
-        headers["X-Veritas-Signature"] = f"sha256={sign_webhook_payload(body_bytes, hmac_secret)}"
 
     try:
         resp = httpx.post(erp_url, content=body_bytes, headers=headers, timeout=5.0)
@@ -415,12 +523,12 @@ def sync_erp_execution_status(
     tool_name: str,
     status: str,
     reason: str = "",
+    erp_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Best-effort webhook sync back to ERP sandbox when an execution is rejected."""
     if tool_name not in ERP_TOOLS:
         return {"synced": False, "reason": "non_erp_tool"}
-    adapter = resolve_erp_adapter()
-    erp_url = os.environ.get("VERITAS_ERP_WEBHOOK_URL", "").strip()
+    adapter, erp_url, auth_type, auth_header, creds, _ = _resolve_runtime_erp(erp_config)
     if adapter == "local_ledger" or not erp_url:
         return {"synced": False, "reason": "local_ledger"}
     try:
@@ -440,18 +548,61 @@ def sync_erp_execution_status(
         "Idempotency-Key": f"status-{execution_id}-{status.lower()}",
         "X-Veritas-Tenant": tenant_id,
         "X-Veritas-ERP-Adapter": adapter,
+        **_build_auth_headers(auth_type=auth_type, auth_header=auth_header, creds=creds, body_bytes=body_bytes),
     }
-    erp_api_key = os.environ.get("VERITAS_ERP_API_KEY", "").strip()
-    if erp_api_key:
-        headers["Authorization"] = f"Bearer {erp_api_key}"
-    hmac_secret = os.environ.get("VERITAS_ERP_HMAC_SECRET", "").strip()
-    if hmac_secret:
-        headers["X-Veritas-Signature"] = f"sha256={sign_webhook_payload(body_bytes, hmac_secret)}"
     try:
         resp = httpx.post(erp_url, content=body_bytes, headers=headers, timeout=3.0)
         return {"synced": resp.status_code < 400, "status_code": resp.status_code}
     except httpx.HTTPError as exc:
         return {"synced": False, "reason": str(exc)}
+
+
+def test_erp_connection(*, tenant_id: str, erp_config: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate SSRF policy and test live connectivity to a tenant's configured ERP."""
+    adapter, erp_url, auth_type, auth_header, creds, _ = _resolve_runtime_erp(erp_config)
+    if adapter == "local_ledger":
+        return {"ok": True, "adapter": adapter, "status_code": 200, "detail": "Local in-process ledger active."}
+    if not erp_url:
+        raise AdapterDeliveryError("Endpoint URL is required for external ERP adapters.")
+    validate_outbound_url(erp_url)
+    started = time.monotonic()
+    if adapter == "odoo":
+        db = creds.get("odoo_db", "").strip()
+        if not db:
+            raise AdapterDeliveryError("Odoo database name (odoo_db) is required.")
+        username = creds.get("odoo_username", "admin").strip() or "admin"
+        secret = creds.get("api_key", "").strip()
+        uid = _odoo_rpc_call(_odoo_jsonrpc_url(erp_url), "common", "authenticate", [db, username, secret, {}])
+        if not uid:
+            raise AdapterDeliveryError("Odoo JSON-RPC authentication failed.")
+        return {
+            "ok": True,
+            "adapter": "odoo",
+            "status_code": 200,
+            "latency_ms": round((time.monotonic() - started) * 1000, 1),
+            "detail": f"Authenticated to Odoo DB '{db}' (uid={uid}).",
+        }
+    body = {"event": "veritas.connection_test", "tenant_id": tenant_id, "adapter": adapter}
+    body_bytes = canonical_json(body).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "X-Veritas-Tenant": tenant_id,
+        "X-Veritas-ERP-Adapter": adapter,
+        **_build_auth_headers(auth_type=auth_type, auth_header=auth_header, creds=creds, body_bytes=body_bytes),
+    }
+    try:
+        resp = httpx.post(erp_url, content=body_bytes, headers=headers, timeout=5.0)
+    except httpx.HTTPError as exc:
+        raise AdapterDeliveryError(f"ERP connection test failed: {exc}") from exc
+    if resp.status_code >= 400:
+        raise AdapterDeliveryError(f"ERP endpoint returned HTTP {resp.status_code}")
+    return {
+        "ok": True,
+        "adapter": adapter,
+        "status_code": resp.status_code,
+        "latency_ms": round((time.monotonic() - started) * 1000, 1),
+        "detail": f"Endpoint responded HTTP {resp.status_code}.",
+    }
 
 
 def deliver_egress_webhook(

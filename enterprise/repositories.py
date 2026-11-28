@@ -30,6 +30,7 @@ from .models import (
     Policy,
     Receipt,
     Session as UserSession,
+    TenantErpConfig,
     Tenant,
     ToolCall,
     ToolRegistryEntry,
@@ -1010,6 +1011,70 @@ def upsert_agent_config(
     session.add(row)
     session.flush()
     return row
+
+
+# --------------------------------------------------------------------------- tenant ERP configs
+
+
+def get_tenant_erp_config(session: Session, *, tenant_id: str) -> TenantErpConfig | None:
+    tenant_id = _require_tenant(tenant_id)
+    return session.scalar(
+        select(TenantErpConfig).where(TenantErpConfig.tenant_id == tenant_id)
+    )
+
+
+def upsert_tenant_erp_config(
+    session: Session,
+    *,
+    tenant_id: str,
+    id: str,
+    adapter: str,
+    endpoint_url: str | None,
+    auth_type: str,
+    auth_header: str,
+    credentials_encrypted: str | None,
+    field_mapping: dict[str, Any] | None,
+    enabled: bool,
+    updated_by: str | None = None,
+) -> TenantErpConfig:
+    tenant_id = _require_tenant(tenant_id)
+    existing = get_tenant_erp_config(session, tenant_id=tenant_id)
+    if existing is not None:
+        existing.adapter = adapter
+        existing.endpoint_url = endpoint_url
+        existing.auth_type = auth_type
+        existing.auth_header = auth_header
+        existing.credentials_encrypted = credentials_encrypted
+        existing.field_mapping = field_mapping
+        existing.enabled = enabled
+        existing.updated_by = updated_by
+        session.flush()
+        return existing
+    row = TenantErpConfig(
+        id=id,
+        tenant_id=tenant_id,
+        adapter=adapter,
+        endpoint_url=endpoint_url,
+        auth_type=auth_type,
+        auth_header=auth_header,
+        credentials_encrypted=credentials_encrypted,
+        field_mapping=field_mapping,
+        enabled=enabled,
+        updated_by=updated_by,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def delete_tenant_erp_config(session: Session, *, tenant_id: str) -> bool:
+    tenant_id = _require_tenant(tenant_id)
+    existing = get_tenant_erp_config(session, tenant_id=tenant_id)
+    if existing is None:
+        return False
+    session.delete(existing)
+    session.flush()
+    return True
 
 
 def list_approver_emails(session: Session, *, tenant_id: str) -> list[str]:

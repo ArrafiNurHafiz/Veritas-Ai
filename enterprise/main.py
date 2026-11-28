@@ -34,11 +34,19 @@ from .agents import (
 )
 from .adapters import (
     AdapterDeliveryError,
+    ERP_AUTH_TYPES,
+    SUPPORTED_ERP_ADAPTERS,
     SsrfBlockedError,
+    decrypt_erp_credentials,
     deliver_egress_webhook,
+    encrypt_erp_credentials,
     execute_erp_tool,
     find_sensitive_fields,
+    mask_secret,
+    resolve_erp_adapter,
     sync_erp_execution_status,
+    test_erp_connection,
+    validate_outbound_url,
 )
 from .anchor_worker import (
     AnchorOutboxWorker,
@@ -498,14 +506,31 @@ def _issue_receipt(
     return receipt_id
 
 
+def _load_tenant_erp_runtime(session: Any, tenant_id: str) -> dict[str, Any] | None:
+    row = repo.get_tenant_erp_config(session, tenant_id=tenant_id)
+    if row is None or not row.enabled:
+        return None
+    return {
+        "adapter": row.adapter,
+        "endpoint_url": row.endpoint_url or "",
+        "auth_type": row.auth_type,
+        "auth_header": row.auth_header,
+        "credentials": decrypt_erp_credentials(row.credentials_encrypted),
+        "field_mapping": row.field_mapping or {},
+        "enabled": row.enabled,
+    }
+
+
 def _execute_tool(session: Any, *, tenant_id: str, execution: Any, args: Mapping[str, Any]) -> None:
     tool_name = execution.tool or "approve_invoice"
+    erp_runtime = _load_tenant_erp_runtime(session, tenant_id)
     try:
         outcome = execute_erp_tool(
             execution_id=execution.id,
             tenant_id=tenant_id,
             tool_name=tool_name,
             arguments=args,
+            erp_config=erp_runtime,
         )
     except (SsrfBlockedError, AdapterDeliveryError) as exc:
         repo.set_execution_status(
@@ -1214,6 +1239,7 @@ def decide(
                 tool_name=execution.tool or "",
                 status="DENIED",
                 reason=resume_failure,
+                erp_config=_load_tenant_erp_runtime(session, identity.tenant_id),
             )
             repo.create_audit_event(
                 session, tenant_id=identity.tenant_id, actor=identity.user_id,
@@ -1238,6 +1264,7 @@ def decide(
                 tool_name=execution.tool or "",
                 status="REJECTED",
                 reason=body.reason,
+                erp_config=_load_tenant_erp_runtime(session, identity.tenant_id),
             )
             repo.create_audit_event(
                 session, tenant_id=identity.tenant_id, actor=identity.user_id,
@@ -1572,6 +1599,194 @@ def tenants_onboard(
             payload={"name": tenant.name, "slug": tenant.slug, "created_by_tenant": identity.tenant_id},
         )
         return {**_row_dict(tenant), "seeded": True}
+
+
+class ErpConfigUpsertRequest(BaseModel):
+    adapter: str = Field(min_length=2, max_length=32)
+    endpoint_url: str | None = Field(default=None, max_length=2048)
+    auth_type: str = Field(default="none", max_length=32)
+    auth_header: str = Field(default="Authorization", max_length=64)
+    api_key: str | None = Field(default=None, max_length=2048)
+    hmac_secret: str | None = Field(default=None, max_length=2048)
+    odoo_db: str | None = Field(default=None, max_length=128)
+    odoo_username: str | None = Field(default=None, max_length=128)
+    field_mapping: dict[str, str] | None = None
+    enabled: bool = True
+
+
+def _serialize_erp_config(row: Any | None, *, tenant_id: str) -> dict[str, Any]:
+    if row is None:
+        return {
+            "configured": False,
+            "tenant_id": tenant_id,
+            "adapter": resolve_erp_adapter(),
+            "endpoint_url": None,
+            "auth_type": "none",
+            "auth_header": "Authorization",
+            "has_api_key": False,
+            "api_key_masked": None,
+            "has_hmac_secret": False,
+            "hmac_secret_masked": None,
+            "odoo_db": None,
+            "odoo_username": None,
+            "field_mapping": {},
+            "enabled": True,
+            "source": "server_default",
+        }
+    creds = decrypt_erp_credentials(row.credentials_encrypted)
+    return {
+        "configured": True,
+        "id": row.id,
+        "tenant_id": tenant_id,
+        "adapter": row.adapter,
+        "endpoint_url": row.endpoint_url,
+        "auth_type": row.auth_type,
+        "auth_header": row.auth_header,
+        "has_api_key": bool(creds.get("api_key")),
+        "api_key_masked": mask_secret(creds.get("api_key")),
+        "has_hmac_secret": bool(creds.get("hmac_secret")),
+        "hmac_secret_masked": mask_secret(creds.get("hmac_secret")),
+        "odoo_db": creds.get("odoo_db") or None,
+        "odoo_username": creds.get("odoo_username") or None,
+        "field_mapping": row.field_mapping or {},
+        "enabled": row.enabled,
+        "updated_by": row.updated_by,
+        "updated_at": row.updated_at,
+        "source": "tenant_custom",
+    }
+
+
+@app.get("/api/v1/erp/config")
+def erp_config_get(
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    with session_scope() as session:
+        row = repo.get_tenant_erp_config(session, tenant_id=identity.tenant_id)
+        return _serialize_erp_config(row, tenant_id=identity.tenant_id)
+
+
+@app.put("/api/v1/erp/config")
+def erp_config_upsert(
+    body: ErpConfigUpsertRequest,
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    adapter = body.adapter.strip().lower()
+    auth_type = body.auth_type.strip().lower()
+    if adapter not in SUPPORTED_ERP_ADAPTERS:
+        raise ApiError(
+            422,
+            "INVALID_ERP_ADAPTER",
+            f"Unsupported adapter '{adapter}'. Allowed: {', '.join(sorted(SUPPORTED_ERP_ADAPTERS))}.",
+        )
+    if auth_type not in ERP_AUTH_TYPES:
+        raise ApiError(
+            422,
+            "INVALID_AUTH_TYPE",
+            f"Unsupported auth_type '{auth_type}'. Allowed: {', '.join(sorted(ERP_AUTH_TYPES))}.",
+        )
+    endpoint_url = (body.endpoint_url or "").strip() or None
+    if adapter != "local_ledger":
+        if not endpoint_url:
+            raise ApiError(422, "ENDPOINT_REQUIRED", "Endpoint URL is required for external ERP adapters.")
+        try:
+            validate_outbound_url(endpoint_url)
+        except SsrfBlockedError as exc:
+            raise ApiError(400, "SSRF_BLOCKED", str(exc)) from exc
+
+    with session_scope() as session:
+        existing = repo.get_tenant_erp_config(session, tenant_id=identity.tenant_id)
+        existing_creds = decrypt_erp_credentials(existing.credentials_encrypted) if existing else {}
+        merged_creds = {
+            "api_key": (body.api_key.strip() if body.api_key and body.api_key.strip() else existing_creds.get("api_key", "")),
+            "hmac_secret": (body.hmac_secret.strip() if body.hmac_secret and body.hmac_secret.strip() else existing_creds.get("hmac_secret", "")),
+            "odoo_db": (body.odoo_db.strip() if body.odoo_db is not None else existing_creds.get("odoo_db", "")),
+            "odoo_username": (body.odoo_username.strip() if body.odoo_username is not None else existing_creds.get("odoo_username", "")),
+        }
+        encrypted = encrypt_erp_credentials(merged_creds)
+        row = repo.upsert_tenant_erp_config(
+            session,
+            tenant_id=identity.tenant_id,
+            id=existing.id if existing else f"erp_{uuid.uuid4().hex[:12]}",
+            adapter=adapter,
+            endpoint_url=endpoint_url,
+            auth_type=auth_type,
+            auth_header=(body.auth_header or "Authorization").strip() or "Authorization",
+            credentials_encrypted=encrypted,
+            field_mapping=body.field_mapping or {},
+            enabled=body.enabled,
+            updated_by=identity.user_id,
+        )
+        repo.create_audit_event(
+            session,
+            tenant_id=identity.tenant_id,
+            actor=identity.user_id,
+            action="erp_config.updated",
+            target_type="tenant_erp_config",
+            target_id=row.id,
+            payload={"adapter": adapter, "auth_type": auth_type, "enabled": body.enabled, "endpoint_url": endpoint_url},
+        )
+        return _serialize_erp_config(row, tenant_id=identity.tenant_id)
+
+
+@app.post("/api/v1/erp/test")
+def erp_config_test(
+    body: ErpConfigUpsertRequest | None = None,
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    with session_scope() as session:
+        existing = repo.get_tenant_erp_config(session, tenant_id=identity.tenant_id)
+        existing_creds = decrypt_erp_credentials(existing.credentials_encrypted) if existing else {}
+        if body is not None:
+            runtime = {
+                "adapter": body.adapter.strip().lower(),
+                "endpoint_url": (body.endpoint_url or "").strip(),
+                "auth_type": body.auth_type.strip().lower(),
+                "auth_header": (body.auth_header or "Authorization").strip(),
+                "credentials": {
+                    "api_key": (body.api_key.strip() if body.api_key and body.api_key.strip() else existing_creds.get("api_key", "")),
+                    "hmac_secret": (body.hmac_secret.strip() if body.hmac_secret and body.hmac_secret.strip() else existing_creds.get("hmac_secret", "")),
+                    "odoo_db": (body.odoo_db.strip() if body.odoo_db is not None else existing_creds.get("odoo_db", "")),
+                    "odoo_username": (body.odoo_username.strip() if body.odoo_username is not None else existing_creds.get("odoo_username", "")),
+                },
+                "enabled": True,
+            }
+        elif existing is not None:
+            runtime = {
+                "adapter": existing.adapter,
+                "endpoint_url": existing.endpoint_url or "",
+                "auth_type": existing.auth_type,
+                "auth_header": existing.auth_header,
+                "credentials": existing_creds,
+                "enabled": True,
+            }
+        else:
+            runtime = {"adapter": resolve_erp_adapter(), "enabled": True}
+
+    try:
+        return test_erp_connection(tenant_id=identity.tenant_id, erp_config=runtime)
+    except SsrfBlockedError as exc:
+        raise ApiError(400, "SSRF_BLOCKED", str(exc)) from exc
+    except AdapterDeliveryError as exc:
+        raise ApiError(502, "ERP_TEST_FAILED", str(exc)) from exc
+
+
+@app.delete("/api/v1/erp/config")
+def erp_config_delete(
+    identity: Identity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    with session_scope() as session:
+        deleted = repo.delete_tenant_erp_config(session, tenant_id=identity.tenant_id)
+        if deleted:
+            repo.create_audit_event(
+                session,
+                tenant_id=identity.tenant_id,
+                actor=identity.user_id,
+                action="erp_config.deleted",
+                target_type="tenant_erp_config",
+                target_id=identity.tenant_id,
+                payload={"reverted_to": "server_default"},
+            )
+        return {"deleted": deleted, "tenant_id": identity.tenant_id}
 
 
 @app.get("/api/v1/tools")

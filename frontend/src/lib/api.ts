@@ -434,6 +434,73 @@ export function setToolEnabled(toolName: string, enabled: boolean) {
   });
 }
 
+export type ErpAdapterType = 'local_ledger' | 'webhook' | 'odoo' | 'sap' | 'custom_rest';
+export type ErpAuthType = 'none' | 'bearer' | 'api_key' | 'basic' | 'hmac' | 'odoo_jsonrpc';
+
+export interface ErpConfigView {
+  configured: boolean;
+  id?: string;
+  tenant_id: string;
+  adapter: ErpAdapterType;
+  endpoint_url: string | null;
+  auth_type: ErpAuthType;
+  auth_header: string;
+  has_api_key: boolean;
+  api_key_masked: string | null;
+  has_hmac_secret: boolean;
+  hmac_secret_masked: string | null;
+  odoo_db: string | null;
+  odoo_username: string | null;
+  field_mapping: Record<string, string>;
+  enabled: boolean;
+  source: 'tenant_custom' | 'server_default';
+}
+
+export interface ErpConfigPayload {
+  adapter: ErpAdapterType;
+  endpoint_url?: string | null;
+  auth_type: ErpAuthType;
+  auth_header?: string;
+  api_key?: string;
+  hmac_secret?: string;
+  odoo_db?: string;
+  odoo_username?: string;
+  field_mapping?: Record<string, string>;
+  enabled?: boolean;
+}
+
+export interface ErpTestResult {
+  ok: boolean;
+  adapter: string;
+  status_code: number;
+  latency_ms?: number;
+  detail: string;
+}
+
+export function getErpConfig() {
+  return request<ErpConfigView>('/api/v1/erp/config');
+}
+
+export function saveErpConfig(payload: ErpConfigPayload) {
+  return request<ErpConfigView>('/api/v1/erp/config', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testErpConfig(payload?: ErpConfigPayload) {
+  return request<ErpTestResult>('/api/v1/erp/test', {
+    method: 'POST',
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+}
+
+export function deleteErpConfig() {
+  return request<{ deleted: boolean; tenant_id: string }>('/api/v1/erp/config', {
+    method: 'DELETE',
+  });
+}
+
 export interface VendorView {
   id: string;
   tenant_id: string;
